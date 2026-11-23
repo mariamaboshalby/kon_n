@@ -1,0 +1,103 @@
+﻿@extends('admin.dashboard')
+
+@section('sidebar')
+    @include('components.sidebar.inquiries')
+@endsection
+
+@section('content')
+    @include('components.breadcrumb', [
+        'title' => __('inquiries::inquiries.inquiries_roles'),
+        'breadcrumb_items' => [['label' => __('inquiries::inquiries.home'), 'url' => route('admin.dashboard')], ['label' => __('inquiries::inquiries.roles')]],
+    ])
+
+    <div class="row">
+        <div class="col-lg-12">
+
+            {{-- Add Button --}}
+            @can('create Inquiries Roles')
+                <a href="{{ route('inquiries-roles.create') }}" class="btn btn-main font-hold fw-bold">
+                    <i class="fas fa-plus me-2"></i>
+                    {{ __('inquiries::inquiries.add_new') }}
+                </a>
+            @endcan
+
+            <br><br>
+
+            <div class="card">
+                <div class="card-body">
+                    <x-inquiries::bulk-actions model="Modules\Inquiries\Models\InquirieRole" permission="delete Inquiries Roles">
+                        <div class="table-responsive" style="overflow-x: auto;">
+
+                        <x-table-export-actions table-id="inquiries-roles-table" filename="inquiries-roles-table"
+                            excel-label="{{ __('inquiries::inquiries.export_excel') }}" pdf-label="{{ __('inquiries::inquiries.export_pdf') }}"
+                            print-label="{{ __('inquiries::inquiries.print') }}" />
+
+                        <table id="inquiries-roles-table" class="table table-striped mb-0" style="min-width: 1000px;">
+                            <thead class="table-light text-center align-middle">
+                                <tr>
+                                    <th>
+                                        <input type="checkbox" class="form-check-input" x-model="selectAll" @change="toggleAll">
+                                    </th>
+                                    <th>#</th>
+                                    <th>{{ __('inquiries::inquiries.name') }}</th>
+                                    <th>{{ __('inquiries::inquiries.description') }}</th>
+
+                                    @canany(['edit Inquiries Roles', 'delete Inquiries Roles'])
+                                        <th>{{ __('inquiries::inquiries.actions') }}</th>
+                                    @endcanany
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse ($roles as $role)
+                                    <tr class="text-center">
+                                        <td>
+                                            <input type="checkbox" class="form-check-input bulk-checkbox"
+                                                   value="{{ $role->id }}" x-model="selectedIds">
+                                        </td>
+                                        <td>{{ $loop->iteration }}</td>
+                                        <td>{{ $role->name }}</td>
+                                        <td>{{ $role->description ?? '-' }}</td>
+
+                                        @canany(['edit Inquiries Roles', 'delete Inquiries Roles'])
+                                            <td>
+                                                @can('edit Inquiries Roles')
+                                                    <a class="btn btn-success btn-icon-square-sm"
+                                                        href="{{ route('inquiries-roles.edit', $role->id) }}">
+                                                        <i class="las la-edit"></i>
+                                                    </a>
+                                                @endcan
+
+                                                @can('delete Inquiries Roles')
+                                                    <form action="{{ route('inquiries-roles.destroy', $role->id) }}" method="POST"
+                                                        style="display:inline-block;"
+                                                        onsubmit="return confirm('{{ __('inquiries::inquiries.confirm_delete') }}');">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit" class="btn btn-danger btn-icon-square-sm">
+                                                            <i class="las la-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                @endcan
+                                            </td>
+                                        @endcanany
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="6" class="text-center">
+                                            <div class="alert alert-info py-3 mb-0"
+                                                style="font-size: 1.2rem; font-weight: 500;">
+                                                <i class="las la-info-circle me-2"></i>
+                                                {{ __('inquiries::inquiries.no_data_available') }}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                        </div>
+                    </x-inquiries::bulk-actions>
+                </div>
+            </div>
+        </div>
+    </div>
+@endsection

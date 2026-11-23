@@ -1,0 +1,34 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use Modules\Installments\Http\Controllers\InstallmentController;
+
+Route::middleware(['auth', 'web'])->group(function () {
+    Route::get('/installments/plans', [InstallmentController::class, 'index'])
+        ->name('installments.plans.index')
+        ->middleware('can:view Installment Plans');
+
+    Route::get('/installments/plans/create', [InstallmentController::class, 'create'])
+        ->name('installments.plans.create')
+        ->middleware('can:create Installment Plans');
+
+    Route::get('/installments/plans/{plan}', [InstallmentController::class, 'show'])
+        ->name('installments.plans.show')
+        ->middleware('can:view Installment Plans');
+
+    Route::get('/installments/plans/{plan}/edit', [InstallmentController::class, 'edit'])
+        ->name('installments.plans.edit')
+        ->middleware('can:edit Installment Plans');
+
+    Route::delete('/installments/plans/{plan}', [InstallmentController::class, 'destroy'])
+        ->name('installments.plans.destroy')
+        ->middleware('can:delete Installment Plans');
+
+    Route::get('/installments/payments/overdue', [InstallmentController::class, 'overduePayments'])
+        ->name('installments.payments.overdue')
+        ->middleware('can:view Overdue Installments');
+
+    Route::get('/installments/payments/all', [InstallmentController::class, 'allPayments'])
+        ->name('installments.payments.all')
+        ->middleware('can:view Installment Plans');
+});

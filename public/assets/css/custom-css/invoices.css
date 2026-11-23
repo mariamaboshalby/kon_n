@@ -1,0 +1,10 @@
+#item-details-card {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+#item-details-wrapper:hover #item-details-card {
+    opacity: 1;
+    visibility: visible;
+}

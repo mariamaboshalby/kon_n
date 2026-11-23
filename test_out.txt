@@ -1,0 +1,11 @@
+rs"></i>
+                        <span class="card-title">{{ __('reports::reports.customers_reports') }}</span>
+                    </div>
+                    <div class="card-body">
+                        <!-- ÙŠÙ…ÙƒÙ† Ø¥Ø¶Ø§ÙØ© ØªÙ‚Ø§Ø±ÙŠØ± Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ Ù‡Ù†Ø§ -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- ØªÙ‚Ø§Ø±ÙŠØ± Ø§Ù„ØªØµÙ†ÙŠØ¹ -->
+          

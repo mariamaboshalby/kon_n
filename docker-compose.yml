@@ -1,0 +1,68 @@
+services:
+  # Laravel App
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${APP_NAME:-laravel}-app
+    container_name: massar_app
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+    networks:
+      - massar-network
+
+  # Web Server (Nginx)
+  nginx:
+    image: nginx:alpine
+    container_name: massar_nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ./:/var/www
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+    networks:
+      - massar-network
+
+  # Database (MySQL)
+  db:
+    image: mysql:8.0
+    container_name: massar_db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root_password}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-root_password}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+    networks:
+      - massar-network
+
+  # Laravel Reverb (WebSocket)
+  reverb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: massar_reverb
+    command: php artisan reverb:start --host=0.0.0.0 --port=${REVERB_PORT:-8080}
+    ports:
+      - "${REVERB_PORT:-8080}:${REVERB_PORT:-8080}"
+    volumes:
+      - ./:/var/www
+    depends_on:
+      - app
+    networks:
+      - massar-network
+
+networks:
+  massar-network:
+    driver: bridge
+
+volumes:
+  dbdata:
+    driver: local

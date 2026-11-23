@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>إعداد طابعات المجموعات</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" crossorigin="anonymous">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h5 class="mb-0">إعداد طابعات المجموعات</h5>
+      <div class="d-flex gap-2">
+        <button id="btn-settings" class="btn btn-outline-secondary btn-sm" title="الإعدادات">⚙</button>
+        <button id="btn-refresh" class="btn btn-outline-secondary btn-sm">تحديث</button>
+        <button id="btn-save" class="btn btn-primary btn-sm">حفظ الكل</button>
+      </div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel" class="card mb-3" style="display:none">
+      <div class="card-body py-2">
+        <div class="row g-2 align-items-end">
+          <div class="col">
+            <label class="form-label small mb-1">رابط السيرفر</label>
+            <input id="input-server-url" type="text" class="form-control form-control-sm" placeholder="مثال: 127.0.0.1:8080 أو lo.erplok.com">
+          </div>
+          <div class="col">
+            <label class="form-label small mb-1">Desktop Token</label>
+            <input id="input-token" type="text" class="form-control form-control-sm" placeholder="pos-desktop-agent-token-2024">
+          </div>
+          <div class="col-auto">
+            <button id="btn-save-config" class="btn btn-success btn-sm">حفظ</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="status-msg" class="small mt-1 mb-2"></div>
+
+    <div id="fallback-msg" class="alert alert-warning" style="display:none">
+      تعذّر جلب المجموعات — تأكد من رابط السيرفر والـ Token في الإعدادات ثم اضغط تحديث
+    </div>
+
+    <table class="table table-bordered table-sm">
+      <thead class="table-light">
+        <tr>
+          <th>المجموعة</th>
+          <th>الطابعة</th>
+        </tr>
+      </thead>
+      <tbody id="categories-body"></tbody>
+    </table>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

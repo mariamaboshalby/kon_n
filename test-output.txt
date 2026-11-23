@@ -1,0 +1,17 @@
+
+
+`    `    
+
+
+
+
+   PASS  Tests\Feature\POS\RestaurantInvoiceServiceTest
+  ✓ free manufacturing invoice has pro type 59       28.92s  
+  ✓ manufacturing order id matches template           3.62s  
+  ✓ operation items quantity equals ordered quantity  2.90s  
+  ✓ no manufacturing invoices for items without temp… 2.43s  
+  ✓ rollback on failure leaves no records             2.24s  
+
+  Tests:    5 passed (10 assertions)
+  Duration: 40.25s
+

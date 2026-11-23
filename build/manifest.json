@@ -1,0 +1,24 @@
+{
+  "resources/css/app.css": {
+    "file": "assets/app-D6QZ8pEJ.css",
+    "src": "resources/css/app.css",
+    "isEntry": true
+  },
+  "resources/css/design-system.css": {
+    "file": "assets/design-system-Bk6rrM_-.css",
+    "src": "resources/css/design-system.css",
+    "isEntry": true
+  },
+  "resources/js/app.js": {
+    "file": "assets/app-Bx4OQsKN.js",
+    "name": "app",
+    "src": "resources/js/app.js",
+    "isEntry": true
+  },
+  "resources/js/components/employee-form-scripts.js": {
+    "file": "assets/employee-form-scripts-C2_bc9Sp.js",
+    "name": "employee-form-scripts",
+    "src": "resources/js/components/employee-form-scripts.js",
+    "isEntry": true
+  }
+}

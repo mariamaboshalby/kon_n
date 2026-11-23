@@ -1,0 +1,252 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Modules\Installments\Livewire;
+
+use Carbon\Carbon;
+use Livewire\Component;
+use Illuminate\Support\Facades\DB;
+use Modules\Accounts\Models\AccHead;
+use Modules\Installments\Models\InstallmentPlan;
+use Modules\Installments\Models\InstallmentPayment;
+
+class EditInstallmentPlan extends Component
+{
+    public InstallmentPlan $plan;
+    public $acc_head_id;
+    public $total_amount;
+    public $down_payment;
+    public $interestValue = 0;
+    public $interestPercentage = 0;
+    public $interestType = 'fixed';
+    public $amount_to_be_installed;
+    public $number_of_installments;
+    public $start_date;
+    public $interval_type = 'monthly';
+    public $clients = [];
+    public $accountBalance = 0;
+    public $existingPlansTotal = 0;
+    public $availableBalance = 0;
+    public $paidPaymentsCount = 0;
+
+    // Computed property for installment amount
+    public function getInstallmentAmountProperty()
+    {
+        if ($this->number_of_installments > 0 && $this->amount_to_be_installed > 0) {
+            return $this->amount_to_be_installed / $this->number_of_installments;
+        }
+        return 0;
+    }
+
+    public function mount(InstallmentPlan $plan)
+    {
+        $this->plan = $plan->load('payments', 'account');
+
+        // Load plan data
+        $this->acc_head_id = $plan->acc_head_id;
+        $this->total_amount = $plan->total_amount;
+        $this->down_payment = $plan->down_payment;
+        $this->amount_to_be_installed = $plan->amount_to_be_installed;
+        $this->number_of_installments = $plan->number_of_installments;
+        $this->start_date = $plan->start_date->format('Y-m-d\TH:i');
+        $this->interval_type = $plan->interval_type;
+
+        // Count paid payments
+        $this->paidPaymentsCount = $plan->payments()->where('status', 'paid')->count();
+
+        // Load clients
+        $this->clients = $this->getAccountsByCode('1103');
+
+        // Calculate balances
+        if ($this->acc_head_id) {
+            $this->updateBalances();
+        }
+    }
+
+    public function updatedAccHeadId()
+    {
+        $this->updateBalances();
+    }
+
+    private function updateBalances()
+    {
+        if (!$this->acc_head_id) {
+            return;
+        }
+
+        $account = AccHead::find($this->acc_head_id);
+        if (!$account) {
+            return;
+        }
+
+        // Get account balance
+        $this->accountBalance = $account->calculateCurrentBalance();
+
+        // Get existing plans total (excluding current plan)
+        $this->existingPlansTotal = InstallmentPlan::where('acc_head_id', $this->acc_head_id)
+            ->where('id', '!=', $this->plan->id)
+            ->sum('amount_to_be_installed');
+
+        // Calculate available balance
+        $this->availableBalance = $this->accountBalance - $this->existingPlansTotal;
+    }
+
+    public function updatedInterestValue()
+    {
+        $baseAmount = $this->total_amount - $this->down_payment;
+        if ($baseAmount > 0 && $this->interestValue > 0) {
+            $this->interestPercentage = round(($this->interestValue / $baseAmount) * 100, 2);
+        } elseif ($this->interestValue == 0) {
+            $this->interestPercentage = 0;
+        }
+        $this->calculateAmountToBeInstalled();
+    }
+
+    public function updatedInterestPercentage()
+    {
+        $baseAmount = $this->total_amount - $this->down_payment;
+        if ($baseAmount > 0 && $this->interestPercentage > 0) {
+            $this->interestValue = round(($baseAmount * $this->interestPercentage) / 100, 2);
+        } elseif ($this->interestPercentage == 0) {
+            $this->interestValue = 0;
+        }
+        $this->calculateAmountToBeInstalled();
+    }
+
+    // عند تغيير المبلغ الإجمالي، أعد حساب قيمة الفائدة من النسبة
+    public function updatedTotalAmount()
+    {
+        if ($this->interestPercentage > 0) {
+            $baseAmount = $this->total_amount - $this->down_payment;
+            if ($baseAmount > 0) {
+                $this->interestValue = round(($baseAmount * $this->interestPercentage) / 100, 2);
+            }
+        }
+        $this->calculateAmountToBeInstalled();
+    }
+
+    // عند تغيير الدفعة الأولى، أعد حساب قيمة الفائدة من النسبة
+    public function updatedDownPayment()
+    {
+        if ($this->interestPercentage > 0) {
+            $baseAmount = $this->total_amount - $this->down_payment;
+            if ($baseAmount > 0) {
+                $this->interestValue = round(($baseAmount * $this->interestPercentage) / 100, 2);
+            }
+        }
+        $this->calculateAmountToBeInstalled();
+    }
+
+    public function updatedInterestType()
+    {
+        $this->calculateAmountToBeInstalled();
+    }
+
+    private function calculateAmountToBeInstalled()
+    {
+        if ($this->total_amount && $this->down_payment !== null) {
+            // استخدم قيمة الفائدة مباشرة (تم حسابها من النسبة أو القيمة)
+            $interestAmount = $this->interestValue;
+            
+            $this->amount_to_be_installed = $this->total_amount - $this->down_payment + $interestAmount;
+        }
+    }
+
+    public function update()
+    {
+        // Validate
+        $validated = $this->validate([
+            'acc_head_id' => 'required|exists:acc_head,id',
+            'total_amount' => 'required|numeric|min:0.01',
+            'down_payment' => 'required|numeric|min:0',
+            'amount_to_be_installed' => 'required|numeric|min:0.01',
+            'number_of_installments' => 'required|integer|min:1',
+            'start_date' => 'required|date',
+            'interval_type' => 'required|in:daily,weekly,monthly,yearly',
+        ]);
+
+        // Check if amount exceeds available balance
+        if ($this->amount_to_be_installed > $this->availableBalance) {
+            $this->dispatch('validation-error', [
+                'title' => __('installments::installments.amount_error'),
+                'text' => __('installments::installments.requested_amount_greater_than_balance', [
+                    'amount' => $this->amount_to_be_installed,
+                    'balance' => $this->availableBalance
+                ]),
+            ]);
+            return;
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Update plan
+            $this->plan->update($validated);
+
+            // Recalculate unpaid payments only
+            $this->recalculatePayments();
+
+            DB::commit();
+
+            $this->dispatch('plan-updated', [
+                'title' => __('installments::installments.success'),
+                'text' => __('installments::installments.installment_plan_updated_successfully'),
+                'planId' => $this->plan->id,
+            ]);
+        } catch (\Exception) {
+            DB::rollBack();
+
+            $this->dispatch('validation-error', [
+                'title' => __('installments::installments.error'),
+                'text' => __('installments::installments.error_updating_plan'),
+            ]);
+        }
+    }
+
+    private function recalculatePayments()
+    {
+        // Delete only unpaid payments
+        $this->plan->payments()->where('status', '!=', 'paid')->delete();
+
+        // Calculate new installment amount
+        $installmentAmount = $this->amount_to_be_installed / $this->number_of_installments;
+
+        // Create new payments
+        $startDate = Carbon::parse($this->start_date);
+
+        for ($i = 1; $i <= $this->number_of_installments; $i++) {
+            $dueDate = match ($this->interval_type) {
+                'daily' => $startDate->copy()->addDays($i - 1),
+                'weekly' => $startDate->copy()->addWeeks($i - 1),
+                'monthly' => $startDate->copy()->addMonths($i - 1),
+                'yearly' => $startDate->copy()->addYears($i - 1),
+                default => $startDate->copy()->addMonths($i - 1),
+            };
+
+            InstallmentPayment::create([
+                'installment_plan_id' => $this->plan->id,
+                'installment_number' => $i,
+                'amount_due' => $installmentAmount,
+                'amount_paid' => 0,
+                'due_date' => $dueDate->format('Y-m-d H:i:s'),
+                'status' => 'pending',
+            ]);
+        }
+    }
+
+    private function getAccountsByCode(string $code): array
+    {
+        return AccHead::where('isdeleted', 0)
+            ->where('is_basic', 0)
+            ->where('code', 'like', $code . '%')
+            ->select('id', 'aname', 'code')
+            ->get()
+            ->toArray();
+    }
+
+    public function render()
+    {
+        return view('installments::livewire.edit-installment-plan');
+    }
+}

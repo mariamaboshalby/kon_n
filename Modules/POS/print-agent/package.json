@@ -1,0 +1,29 @@
+{
+  "name": "pos-printer-config",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "test": "jest"
+  },
+  "dependencies": {
+    "electron": "^41.3.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^26.8.1",
+    "fast-check": "^3.0.0",
+    "jest": "^29.0.0"
+  },
+  "build": {
+    "appId": "com.massar.pos-printer-config",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/tray-icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    }
+  }
+}

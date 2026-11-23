@@ -1,0 +1,11 @@
+{
+    "name": "Estate",
+    "alias": "estate",
+    "description": "Real Estate Management Module",
+    "keywords": ["real-estate", "property", "erp"],
+    "priority": 0,
+    "providers": [
+        "Modules\\Estate\\Providers\\EstateServiceProvider"
+    ],
+    "files": []
+}
