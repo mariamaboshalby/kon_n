@@ -80,7 +80,6 @@
         <p class="error-message">{{ $message ?? 'حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.' }}</p>
         <div class="error-actions">
             <a href="javascript:history.back()" class="btn btn-secondary">العودة</a>
-            <a href="{{ route('pos.create') }}" class="btn btn-primary">نظام نقاط البيع</a>
         </div>
     </div>
 </body>

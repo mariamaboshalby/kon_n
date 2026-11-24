@@ -38,15 +38,21 @@ class UserController extends Controller
             $hasOptionType = Schema::hasColumn('permissions', 'option_type');
 
             if ($hasOptionType) {
-                $permissions = Permission::where('option_type', '1')
+                $permissions = Permission::query()
+                    ->relevantToInquiries()
+                    ->where('option_type', '1')
                     ->orderByRaw($this->getCategoryOrder())
                     ->get()
                     ->groupBy('category');
-                $selectivePermissions = Permission::where('option_type', '2')
+                $selectivePermissions = Permission::query()
+                    ->relevantToInquiries()
+                    ->where('option_type', '2')
                     ->get()
                     ->groupBy('category');
             } else {
-                $permissions = Permission::whereNotNull('category')
+                $permissions = Permission::query()
+                    ->relevantToInquiries()
+                    ->whereNotNull('category')
                     ->orderByRaw($this->getCategoryOrder())
                     ->get()
                     ->groupBy('category');
@@ -71,17 +77,9 @@ class UserController extends Controller
      */
     private function getCategoryOrder(): string
     {
-        $order = [
-            'Main Data', 'Items', 'Sales', 'Purchases', 'Inventory',
-            'Accounts-mangment', 'Journals', 'vouchers', 'transfers',
-            'Expnses', 'HR', 'CRM', 'POS', 'Installments', 'Discounts',
-            'Projects', 'Manufacturing', 'Quality', 'Maintenance',
-            'Real Estate', 'Rentals', 'Fleet', 'Depreciation',
-            'Shipping', 'Inquiries', 'Progress', 'MyResources Management',
-            'Reports', 'Users', 'Settings', 'Zatca',
-        ];
-
-        $cases = collect($order)->map(fn ($cat, $i) => "WHEN '$cat' THEN $i")->implode(' ');
+        $cases = collect(Permission::INQUIRY_RELATED_CATEGORIES)
+            ->map(fn ($category, $index) => "WHEN '$category' THEN $index")
+            ->implode(' ');
 
         return "CASE category $cases ELSE 999 END";
     }
@@ -92,15 +90,21 @@ class UserController extends Controller
             $hasOptionType = Schema::hasColumn('permissions', 'option_type');
 
             if ($hasOptionType) {
-                $permissions = Permission::where('option_type', '1')
+                $permissions = Permission::query()
+                    ->relevantToInquiries()
+                    ->where('option_type', '1')
                     ->orderByRaw($this->getCategoryOrder())
                     ->get()
                     ->groupBy('category');
-                $selectivePermissions = Permission::where('option_type', '2')
+                $selectivePermissions = Permission::query()
+                    ->relevantToInquiries()
+                    ->where('option_type', '2')
                     ->get()
                     ->groupBy('category');
             } else {
-                $permissions = Permission::whereNotNull('category')
+                $permissions = Permission::query()
+                    ->relevantToInquiries()
+                    ->whereNotNull('category')
                     ->orderByRaw($this->getCategoryOrder())
                     ->get()
                     ->groupBy('category');
@@ -128,7 +132,11 @@ class UserController extends Controller
 
             if (is_array($submittedIds) && ! empty($submittedIds)) {
                 $submittedIds = array_map('intval', $submittedIds);
-                $permissions = Permission::whereIn('id', $submittedIds)->pluck('name')->toArray();
+                $permissions = Permission::query()
+                    ->relevantToInquiries()
+                    ->whereIn('id', $submittedIds)
+                    ->pluck('name')
+                    ->toArray();
                 $user->givePermissionTo($permissions);
             }
 
@@ -148,7 +156,10 @@ class UserController extends Controller
     public function show(User $user)
     {
         $user->load(['permissions', 'branches', 'roles']);
-        $permissions = Permission::all()->groupBy('category');
+        $permissions = Permission::query()
+            ->relevantToInquiries()
+            ->get()
+            ->groupBy('category');
 
         // جلب المشاريع المرتبطة بالمستخدم من خلال الموظف
         $userProjects = collect();
@@ -166,17 +177,23 @@ class UserController extends Controller
         $hasOptionType = Schema::hasColumn('permissions', 'option_type');
 
         if ($hasOptionType) {
-            $permissions = Permission::where('option_type', '1')
+            $permissions = Permission::query()
+                ->relevantToInquiries()
+                ->where('option_type', '1')
                 ->whereNotNull('category')
                 ->orderByRaw($this->getCategoryOrder())
                 ->get()
                 ->groupBy('category');
 
-            $selectivePermissions = Permission::where('option_type', '2')
+            $selectivePermissions = Permission::query()
+                ->relevantToInquiries()
+                ->where('option_type', '2')
                 ->get()
                 ->groupBy('category');
         } else {
-            $permissions = Permission::whereNotNull('category')
+            $permissions = Permission::query()
+                ->relevantToInquiries()
+                ->whereNotNull('category')
                 ->orderByRaw($this->getCategoryOrder())
                 ->get()
                 ->groupBy('category');
@@ -236,6 +253,13 @@ class UserController extends Controller
             // تحويل القيم إلى أرقام صحيحة للأمان
             $submittedIds = array_map('intval', $submittedIds);
 
+            $submittedIds = Permission::query()
+                ->relevantToInquiries()
+                ->whereIn('id', $submittedIds)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
             // التعامل مع option_type للحفاظ على الصلاحيات الأخرى
             $hasOptionType = Schema::hasColumn('permissions', 'option_type');
 
@@ -247,6 +271,10 @@ class UserController extends Controller
 
                 // الفلترة: نحتفظ بأي صلاحية ليس لها نوع (null) أو نوعها غير موجود في الفورم
                 $permissionsToKeepIds = $currentPermissions->filter(function ($permission) use ($typesToUpdate) {
+                    if (! in_array($permission->category, Permission::INQUIRY_RELATED_CATEGORIES, true)) {
+                        return true;
+                    }
+
                     $optionType = $permission->option_type ?? null;
 
                     // إذا لم يكن هناك نوع، نحتفظ بها (صلاحيات أساسية)
@@ -265,7 +293,20 @@ class UserController extends Controller
                 $user->permissions()->sync($allPermissionIds);
             } else {
                 // الطريقة العادية إذا لم يكن هناك option_type
-                $user->permissions()->sync($submittedIds);
+                $currentPermissions = $user->permissions()->get();
+                $permissionsToKeepIds = $currentPermissions
+                    ->filter(fn ($permission) => ! in_array(
+                        $permission->category,
+                        Permission::INQUIRY_RELATED_CATEGORIES,
+                        true
+                    ))
+                    ->pluck('id')
+                    ->toArray();
+
+                $user->permissions()->sync(array_unique(array_merge(
+                    $permissionsToKeepIds,
+                    $submittedIds
+                )));
             }
 
             // 4. تزامن الفروع

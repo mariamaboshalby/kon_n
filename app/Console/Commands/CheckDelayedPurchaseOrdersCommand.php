@@ -37,7 +37,7 @@ class CheckDelayedPurchaseOrdersCommand extends Command
             return 0;
         }
 
-        $url = route('reports.purchasing.delayed-orders');
+        $url = null;
         $message = "يوجد {$count} أمر شراء متأخر. تاريخ الاستلام المتوقع قد مضى ولم تُستلم بعد.";
         $data = [
             'id' => null,

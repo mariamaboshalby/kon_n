@@ -5,7 +5,6 @@
         </a>
     </li>
 @endcan
-
 @can('view Barcode Settings')
     <li class="nav-item">
         <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('barcode.print.settings.edit') }}">
@@ -26,14 +25,6 @@
     <li class="nav-item">
         <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('settings.currency-exchange.index') }}">
             <i class="las la-exchange-alt"></i>{{ __('settings::settings.nav_currencies_exchange') }}
-        </a>
-    </li>
-@endcan
-
-@can('view Kitchen Printer Settings')
-    <li class="nav-item">
-        <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('pos.kitchen-printers.index') }}">
-            <i class="las la-print"></i>{{ __('settings::settings.nav_kitchen_printers') }}
         </a>
     </li>
 @endcan

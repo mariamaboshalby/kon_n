@@ -493,14 +493,16 @@ new class extends Component {
     <td class="font-family-cairo">{{ number_format($before, 2) }}</td>
     <td class="font-family-cairo">{{ number_format($after, 2) }}</td>
     <td class="text-center">
-        @if($movement->pro_tybe == 102)
+        @if($movement->pro_tybe == 102 && \Illuminate\Support\Facades\Route::has('pos.show'))
             <a href="{{ route('pos.show', $movement->pro_id) }}" target="_blank" class="btn btn-sm btn-outline-primary">
                 <i class="fas fa-eye"></i>
             </a>
-        @else
+        @elseif($movement->pro_tybe != 102 && \Illuminate\Support\Facades\Route::has('invoice.view'))
             <a href="{{ route('invoice.view', $movement->pro_id) }}" target="_blank" class="btn btn-sm btn-outline-primary">
                 <i class="fas fa-eye"></i>
             </a>
+        @else
+            —
         @endif
     </td>
 </tr>

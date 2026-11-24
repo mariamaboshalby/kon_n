@@ -127,7 +127,7 @@ class RentalController extends Controller
             ]);
 
             DB::commit();
-            return redirect()->route('rentals.index')->with('success', 'تم حفظ عملية التأجير بنجاح');
+            return redirect()->back()->with('success', 'تم حفظ عملية التأجير بنجاح');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withErrors(['error' => 'حدث خطأ: ' . $e->getMessage()]);
@@ -239,7 +239,7 @@ class RentalController extends Controller
             ]);
 
             DB::commit();
-            return redirect()->route('rentals.index')->with('success', 'تم تحديث عملية التأجير بنجاح');
+            return redirect()->back()->with('success', 'تم تحديث عملية التأجير بنجاح');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->withErrors(['error' => 'حدث خطأ أثناء التحديث: ' . $e->getMessage()]);
@@ -269,7 +269,7 @@ class RentalController extends Controller
             $rental->delete();
 
             DB::commit();
-            return redirect()->route('rentals.index')->with('success', 'تم حذف عملية التأجير بنجاح.');
+            return redirect()->back()->with('success', 'تم حذف عملية التأجير بنجاح.');
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->withErrors(['error' => 'حدث خطأ أثناء الحذف: ' . $e->getMessage()]);

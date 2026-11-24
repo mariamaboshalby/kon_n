@@ -32,7 +32,7 @@
             </div>
             @endif
 
-            <form method="POST" action="{{ route('rentals.store') }}" class="needs-validation" novalidate>
+            <form method="POST" action="#" class="needs-validation" novalidate>
                 @csrf
 
                 <div class="row">
@@ -190,7 +190,7 @@
                         <button type="submit" class="btn btn-main btn-lg px-5">
                             <i class="fas fa-save ml-2"></i> حفظ
                         </button>
-                        <a href="{{ route('rentals.index') }}" class="btn btn-secondary btn-lg px-5 mr-2">
+                        <a href="#" class="btn btn-secondary btn-lg px-5 mr-2">
                             <i class="fas fa-times ml-2"></i> إلغاء
                         </a>
                     </div>

@@ -1,7 +1,7 @@
 @extends('admin.dashboard')
 
 @section('sidebar')
-    @include('components.sidebar.accounts')
+    @include('components.sidebar.permissions')
 @endsection
 
 @section('content')

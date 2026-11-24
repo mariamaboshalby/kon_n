@@ -11,10 +11,6 @@
             {{-- Notifications Bell --}}
             <x-notifications::notifications />
 
-            {{-- Universal Search --}}
-            <x-universalsearch::universal-search />
-
-     
 
             <script>
                 function toggleSidebarMenu() {
@@ -168,7 +164,7 @@
 
         {{-- Default: Link to full Help Center --}}
         <div x-show="results.length === 0" class="p-3">
-            <a href="{{ route('helpcenter.index') }}" class="btn btn-outline-secondary btn-sm w-100 mb-3">
+            <a href="#" class="btn btn-outline-secondary btn-sm w-100 mb-3">
                 <i class="fas fa-book me-1"></i>{{ __('helpcenter::helpcenter.title') }}
             </a>
         </div>

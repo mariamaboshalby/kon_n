@@ -1,25 +1,14 @@
 <?php
 
-use App\Http\Controllers\CostCenterController;
 use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\HomeController;
-use App\Http\Controllers\InventoryStartBalanceController;
 use App\Http\Controllers\ItemController;
-use App\Http\Controllers\JournalController;
-use App\Http\Controllers\MultiJournalController;
-use App\Http\Controllers\MultiVoucherController;
 use App\Http\Controllers\NoteController;
-use App\Http\Controllers\PosShiftController;
-use App\Http\Controllers\PosVouchersController;
 use App\Http\Controllers\PriceController;
-use App\Http\Controllers\ProductionOrderController;
-use App\Http\Controllers\RentalController;
-use App\Http\Controllers\TransferController;
 use App\Http\Controllers\UnitController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VaribalController;
 use App\Http\Controllers\VaribalValueController;
-use App\Http\Controllers\VoucherController;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
@@ -78,11 +67,6 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('notes', NoteController::class)->names('notes')->only('index');
     Route::get('notes/{id}', [NoteController::class, 'noteDetails'])->name('notes.noteDetails');
 
-    // 📁 Journals & Cost Centers
-    Route::get('journals/statistics', [JournalController::class, 'statistics'])->name('journal.statistics');
-    Route::resource('journals', JournalController::class)->names('journals');
-    Route::resource('cost_centers', CostCenterController::class)->names('cost_centers');
-
     // 📁 User Management & Monitoring
     Route::prefix('users')->name('users.')->group(function () {
         Route::get('/login-history', [App\Http\Controllers\UserMonitoringController::class, 'loginHistory'])->name('login-history');
@@ -93,47 +77,15 @@ Route::middleware(['auth'])->group(function () {
     Route::get('users/{user}/copy', [UserController::class, 'copy'])->name('users.copy')->middleware('can:create Users');
     Route::resource('users', UserController::class)->names('users');
 
-    // 📁 Discounts, Vouchers, Transfers
+    // 📁 Discounts
     Route::get('/discounts/general-statistics', [DiscountController::class, 'generalStatistics'])->name('discounts.general-statistics');
     Route::resource('discounts', DiscountController::class)->names('discounts');
 
-    Route::get('/vouchers/statistics', [VoucherController::class, 'statistics'])->name('vouchers.statistics');
-    Route::resource('vouchers', VoucherController::class)->names('vouchers');
-
-    Route::get('transfers/statistics', [TransferController::class, 'statistics'])->name('transfers.statistics');
-    Route::resource('transfers', TransferController::class)->names('transfers');
-
-    Route::get('multi-vouchers/statistics', [MultiVoucherController::class, 'statistics'])->name('multi-vouchers.statistics');
-    Route::get('multi-vouchers/{multivoucher}/duplicate', [MultiVoucherController::class, 'duplicate'])->name('multi-vouchers.duplicate');
-    Route::resource('multi-vouchers', MultiVoucherController::class)->names('multi-vouchers');
-
-    Route::resource('multi-journals', MultiJournalController::class)->names('multi-journals');
-
-    // 📁 Production, Rentals, Inventory
-    Route::get('production-orders/invoice/{invoiceId}', [ProductionOrderController::class, 'showInvoice'])->name('production-orders.show-invoice');
-    Route::resource('production-orders', ProductionOrderController::class)->names('production-orders');
-    Route::resource('rentals', RentalController::class)->names('rentals');
-    Route::resource('inventory-balance', InventoryStartBalanceController::class)->names('inventory-balance');
-    Route::get('/create', [InventoryStartBalanceController::class, 'create'])->name('inventory-start-balance.create');
-    Route::post('/store', [InventoryStartBalanceController::class, 'store'])->name('inventory-start-balance.store');
-    Route::get('/update-opening-balance', function () {
-        return redirect()->route('inventory-balance.index');
-    });
-    Route::post('/update-opening-balance', [InventoryStartBalanceController::class, 'updateOpeningBalance'])->name('inventory-start-balance.update-opening-balance');
-
-    // 📁 Home & POS
+    // 📁 Home
     Route::get('home', [HomeController::class, 'index'])->name('home.index');
-
-    Route::resource('pos-shifts', PosShiftController::class)->names('pos-shifts');
-    Route::get('pos-shifts/{shift}/close', [PosShiftController::class, 'close'])->name('pos-shifts.close');
-    Route::post('pos-shifts/{shift}/close', [PosShiftController::class, 'closeConfirm'])->name('pos-shifts.close.confirm');
-
-    Route::resource('pos-vouchers', PosVouchersController::class)->names('pos-vouchers');
-    Route::get('pos-vouchers/get-items-by-note-detail', [PosVouchersController::class, 'getItemsByNoteDetail'])->name('pos-vouchers.get-items-by-note-detail');
 
     // 📁 Module Routes
     require __DIR__.'/modules/magicals.php';
-    require __DIR__.'/modules/cheques.php';
 });
 
 require __DIR__.'/auth.php';

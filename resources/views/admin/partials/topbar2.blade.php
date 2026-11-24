@@ -85,7 +85,7 @@
                 </a>
             </li>
             <li>
-                <a title="المستخدمين" href="{{ route('reports.index') }}" class="nav-link">
+                <a title="المستخدمين" href="#" class="nav-link">
                     <i class="fas fa-chart-pie fa-2x text-primary"></i>
                 </a>
 

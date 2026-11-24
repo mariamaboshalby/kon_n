@@ -127,7 +127,9 @@ class ClientController extends Controller
                 'color' => 'primary',
                 'title' => __('Invoice') . ' #' . $invoice->id,
                 'description' => __('Value') . ': ' . number_format($invoice->pro_value, 2),
-                'link' => route('invoices.show', $invoice->id)
+                'link' => \Illuminate\Support\Facades\Route::has('invoices.show')
+                    ? route('invoices.show', $invoice->id)
+                    : null
             ]);
         }
 

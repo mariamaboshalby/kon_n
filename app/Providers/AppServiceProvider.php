@@ -7,7 +7,6 @@ use App\Models\OperationItems;
 use App\Models\Item;
 use App\Models\JournalDetail;
 use App\Models\NoteDetails;
-use App\Observers\AccHeadObserver;
 use App\Observers\ItemObserver;
 use App\Observers\JournalDetailObserver;
 use App\Observers\NoteDetailsObserver;
@@ -19,7 +18,6 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Modules\Settings\Models\PublicSetting;
-use Modules\Accounts\Models\AccHead;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -75,7 +73,6 @@ class AppServiceProvider extends ServiceProvider
         NoteDetails::observe(NoteDetailsObserver::class);
         OperHead::observe(OperHeadObserver::class);
         OperationItems::observe(OperationItemsObserver::class);
-        AccHead::observe(AccHeadObserver::class);
         // Project Observer moved to Projects Module
     }
 }

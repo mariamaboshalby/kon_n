@@ -27,7 +27,10 @@ class RoleController extends Controller
 
     public function create()
     {
-        $permissions = Permission::all()->groupBy('category');
+        $permissions = Permission::query()
+            ->relevantToInquiries()
+            ->get()
+            ->groupBy('category');
 
         return view('authorization::roles.create', compact('permissions'));
     }
@@ -41,16 +44,22 @@ class RoleController extends Controller
 
         $role = Role::create($request->only('name'));
 
-        if ($request->has('permissions')) {
-            $role->syncPermissions($request->permissions);
-        }
+        $permissions = Permission::query()
+            ->relevantToInquiries()
+            ->whereIn('name', $request->input('permissions', []))
+            ->pluck('name')
+            ->all();
+        $role->syncPermissions($permissions);
 
         return redirect()->route('roles.index')->with('success', 'Role created');
     }
 
     public function edit(Role $role)
     {
-        $permissions = Permission::all()->groupBy('category');
+        $permissions = Permission::query()
+            ->relevantToInquiries()
+            ->get()
+            ->groupBy('category');
         $rolePermissions = $role->permissions->pluck('name')->toArray();
 
         return view('authorization::roles.edit', compact('role', 'permissions', 'rolePermissions'));
@@ -64,7 +73,26 @@ class RoleController extends Controller
         ]);
 
         $role->update($request->only('name'));
-        $role->syncPermissions($request->permissions ?? []);
+
+        $hiddenPermissions = $role->permissions
+            ->filter(fn (Permission $permission) => ! in_array(
+                $permission->category,
+                Permission::INQUIRY_RELATED_CATEGORIES,
+                true
+            ))
+            ->pluck('name')
+            ->all();
+
+        $selectedPermissions = Permission::query()
+            ->relevantToInquiries()
+            ->whereIn('name', $request->input('permissions', []))
+            ->pluck('name')
+            ->all();
+
+        $role->syncPermissions(array_values(array_unique(array_merge(
+            $hiddenPermissions,
+            $selectedPermissions
+        ))));
 
         return redirect()->route('roles.index')->with('success', 'Role updated');
     }
@@ -72,7 +100,10 @@ class RoleController extends Controller
     public function show(Role $role)
     {
         $role->load('permissions');
-        $permissions = Permission::all()->groupBy('category');
+        $permissions = Permission::query()
+            ->relevantToInquiries()
+            ->get()
+            ->groupBy('category');
 
         return view('authorization::roles.show', compact('role', 'permissions'));
     }
