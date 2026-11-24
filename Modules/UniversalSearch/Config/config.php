@@ -194,7 +194,6 @@ return [
         // ── الإعدادات ─────────────────────────────────────────────
         'mysettings.index'                  => ['title' => 'الإعدادات العامة', 'group' => 'الإعدادات'],
         'currencies.index'                  => ['title' => 'العملات', 'group' => 'الإعدادات'],
-        'settings.currency-exchange.index'  => ['title' => 'أسعار الصرف', 'group' => 'الإعدادات'],
         'barcode.print.settings.edit'       => ['title' => 'إعدادات طباعة الباركود', 'group' => 'الإعدادات'],
         'export-settings'                   => ['title' => 'إعدادات التصدير', 'group' => 'الإعدادات'],
         'roles.index'                       => ['title' => 'الأدوار والصلاحيات', 'group' => 'الإعدادات'],

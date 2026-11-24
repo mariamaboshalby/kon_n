@@ -1,7 +1,7 @@
 @extends('admin.dashboard')
 
 @section('sidebar')
-    @include('components.sidebar.currency-exchange')
+    @include('components.sidebar.settings')
 @endsection
 
 @section('content')

@@ -62,9 +62,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->middleware('permission:view Export Data');
     });
 
-    Route::get('currencies/available', [CurrencyController::class, 'getAvailableCurrencies'])
-        ->name('currencies.available');
-
     // Exchange Rate Management (no permission required - only auth)
     Route::post('currencies/{currency}/update-rate', [CurrencyController::class, 'updateRate'])
         ->name('currencies.update-rate');
@@ -74,18 +71,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('currencies/{currency}/update-mode', [CurrencyController::class, 'updateMode'])
         ->name('currencies.update-mode');
-
-    // Currency Exchange CRUD Routes
-    Route::resource('currency-exchange', \Modules\Settings\Http\Controllers\CurrencyExchangeController::class)
-        ->names('settings.currency-exchange');
-
-    // Buy Currency (pro_type = 80)
-    Route::resource('buy-currency', \Modules\Settings\Http\Controllers\BuyCurrencyController::class)
-        ->names('settings.buy-currency');
-
-    // Sell Currency (pro_type = 81)
-    Route::resource('sell-currency', \Modules\Settings\Http\Controllers\SellCurrencyController::class)
-        ->names('settings.sell-currency');
 
     // CRUD Routes (لازم تيجي بعد الـ Specific Routes)
     Route::resource('currencies', CurrencyController::class)

@@ -20,11 +20,3 @@
         </a>
     </li>
 @endcan
-
-@can('view Currency Exchange')
-    <li class="nav-item">
-        <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('settings.currency-exchange.index') }}">
-            <i class="las la-exchange-alt"></i>{{ __('settings::settings.nav_currencies_exchange') }}
-        </a>
-    </li>
-@endcan

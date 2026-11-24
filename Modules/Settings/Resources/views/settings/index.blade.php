@@ -263,6 +263,7 @@
                 <!-- Compact Save Button - Removed from bottom -->
             </form>
 
+            @if (in_array('Notifications', $enabledModules, true))
             {{-- Telegram Notifications Section --}}
             <div class="mt-4 bg-white rounded-3 shadow-sm p-3">
                 <div class="d-flex align-items-center mb-3">
@@ -308,6 +309,7 @@
                     </div>
                 </form>
             </div>
+            @endif
 
             {{-- Theme Switcher Section --}}
             <div class="mt-4 bg-white rounded-3 shadow-sm p-3" id="theme-switcher-section"

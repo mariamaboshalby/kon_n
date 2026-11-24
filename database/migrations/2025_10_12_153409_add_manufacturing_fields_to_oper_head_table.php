@@ -11,6 +11,10 @@
          */
         public function up(): void
         {
+            if (!Schema::hasTable('manufacturing_orders') || !Schema::hasTable('manufacturing_order_stage')) {
+                return;
+            }
+
             Schema::table('operhead', function (Blueprint $table) {
                 $table->foreignId('manufacturing_order_id')->nullable()->constrained('manufacturing_orders')->onDelete('set null');
                 $table->foreignId('manufacturing_stage_id')->nullable()->constrained('manufacturing_order_stage')->onDelete('set null');
@@ -22,6 +26,12 @@
          */
         public function down(): void
         {
+            if (!Schema::hasTable('operhead')
+                || !Schema::hasColumn('operhead', 'manufacturing_order_id')
+                || !Schema::hasColumn('operhead', 'manufacturing_stage_id')) {
+                return;
+            }
+
             Schema::table('operhead', function (Blueprint $table) {
                 $table->dropForeign(['manufacturing_order_id']);
                 $table->dropForeign(['manufacturing_stage_id']);
