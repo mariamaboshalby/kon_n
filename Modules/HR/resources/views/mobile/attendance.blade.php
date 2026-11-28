@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
@@ -22,13 +22,14 @@
         }
         
         body {
-            font-family: 'Cairo', sans-serif;
+            font-family: var(--masar-font-family);
             background: linear-gradient(135deg, #1b1b22 0%, #383841 100%);
             min-height: 100vh;
             margin: 0;
             padding: 0;
             overflow-x: hidden;
             overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
         
         .attendance-container {
@@ -39,6 +40,8 @@
             padding: 10px;
             padding-top: 15px;
             padding-bottom: 15px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
         
         .attendance-card {
@@ -369,6 +372,8 @@
                 padding: 8px;
                 padding-top: 12px;
                 padding-bottom: 12px;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
             }
             
             .attendance-card {
@@ -818,7 +823,7 @@
         
         /* تحسينات لحقل كود المشروع */
         #project-code {
-            font-family: 'Cairo', sans-serif;
+            font-family: var(--masar-font-family);
         }
         
         #project-code:focus {
@@ -904,7 +909,7 @@
                         <i class="fas fa-sign-out-alt"></i>
                     </button>
                 </div>
-                <p class="attendance-subtitle">اختر نوع البصمة وسجل حضورك</p>
+                <p class="attendance-subtitle" id="attendanceSubtitle">اختر نوع البصمة وسجل حضورك</p>
             </div>
             
             <!-- معلومات المستخدم -->
@@ -930,6 +935,9 @@
                 <span id="location-address">جاري تحديد الموقع...</span>
                 <div class="location-text" id="location-coordinates"></div>
             </div>
+
+            <!-- مؤشر نطاق الشركة / المشروع -->
+            <div id="geofence-status" style="display:none; border-radius:10px; padding:10px 12px; margin-bottom:15px; font-size:13px; text-align:right;"></div>
             
             <!-- معلومات الجهاز -->
             <div class="device-info" style="
@@ -1039,6 +1047,9 @@
         let currentLocation = null;
         let locationTracker = null;
         let deviceType = 'desktop';
+
+        // إعدادات الموقع الجغرافي من الـ server
+        const locationConfig = @json($locationConfig ?? ['require_location'=>false,'location_type'=>null,'company_location'=>null]);
         
         // تهيئة الصفحة
         document.addEventListener('DOMContentLoaded', function() {
@@ -1120,9 +1131,7 @@
             if (window.navigator.standalone === true) {
                 document.body.classList.add('standalone');
             }
-            
-            // منع التمرير
-            document.body.style.overflow = 'hidden';
+            // لا نمنع التمرير — الصفحة تحتاج scroll على الموبايل
         }
         
         function setupEventListeners() {
@@ -1140,8 +1149,66 @@
                     
                     // تحديث زر التسجيل
                     updateAttendanceButton();
+
+                    // التحقق من إمكانية تسجيل النوع المختار (شفتات)
+                    checkShiftStatus(selectedType);
                 });
             });
+        }
+
+        // التحقق من حالة الشفت وتحديث واجهة المستخدم
+        async function checkShiftStatus(type) {
+            try {
+                const response = await fetch(`/api/attendance/can-record?type=${type}`, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                const result = await response.json();
+                const subtitleEl = document.getElementById('attendanceSubtitle');
+
+                if (response.ok && result.success) {
+                    const { can_record, message, last_type } = result.data;
+
+                    if (!can_record) {
+                        // أظهر تحذير في العنوان الفرعي
+                        subtitleEl.textContent = message;
+                        subtitleEl.style.background = '#f8d7da';
+                        subtitleEl.style.borderColor = '#f5c6cb';
+                        subtitleEl.style.color = '#721c24';
+
+                        // عطّل زر التسجيل
+                        const btn = document.getElementById('attendance-btn');
+                        if (!btn.disabled) {
+                            btn.disabled = true;
+                            btn.style.opacity = '0.5';
+                        }
+                    } else {
+                        // إعادة الألوان الطبيعية
+                        if (last_type === 'check_out' && type === 'check_in') {
+                            subtitleEl.textContent = 'دخول شفت جديد — سجّل حضورك';
+                        } else if (last_type === null) {
+                            subtitleEl.textContent = 'اختر نوع البصمة وسجل حضورك';
+                        } else {
+                            subtitleEl.textContent = 'اختر نوع البصمة وسجل حضورك';
+                        }
+                        subtitleEl.style.background = '#fff3cd';
+                        subtitleEl.style.borderColor = '#ffeaa7';
+                        subtitleEl.style.color = '#856404';
+
+                        // أعد تفعيل الزر إذا كان الموقع محدداً
+                        if (currentLocation) {
+                            const btn = document.getElementById('attendance-btn');
+                            btn.disabled = false;
+                            btn.style.opacity = '1';
+                        }
+                    }
+                }
+            } catch (error) {
+                console.warn('تعذّر التحقق من حالة الشفت:', error);
+            }
         }
         
         function updateAttendanceButton() {
@@ -1217,8 +1284,31 @@
             });
         }
 
+        // ── مؤشر نطاق الشركة / المشروع ──────────────────────────────────────
+        function haversineMeters(lat1, lng1, lat2, lng2) {
+            const R = 6371000;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLng = (lng2 - lng1) * Math.PI / 180;
+            const a = Math.sin(dLat/2)**2
+                    + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLng/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function updateGeofenceStatus() {
+            const el = document.getElementById('geofence-status');
+            if (el) el.style.display = 'none';
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         async function getCurrentLocation() {
             try {
+                if (navigator.permissions && navigator.permissions.query) {
+                    const permission = await navigator.permissions.query({ name: 'geolocation' });
+                    if (permission.state === 'denied') {
+                        throw new Error('إذن الموقع محظور لهذا الموقع في Chrome. افتحي إعدادات الموقع من رمز القفل واختاري Location: Allow ثم أعيدي تحميل الصفحة.');
+                    }
+                }
+
                 if (!navigator.geolocation) {
                     throw new Error('المتصفح لا يدعم تحديد الموقع');
                 }
@@ -1254,6 +1344,12 @@
                 
                 // تفعيل زر تسجيل البصمة
                 enableAttendanceButton();
+
+                // تحديث مؤشر النطاق الجغرافي
+                updateGeofenceStatus();
+
+                // التحقق من حالة الشفت بعد تحديد الموقع
+                checkShiftStatus(selectedType);
                 
             } catch (error) {
                 console.error('خطأ في تحديد الموقع:', error);
@@ -1263,81 +1359,70 @@
         }
         
         async function getAddressFromCoordinates(lat, lng) {
-            try {
-                // فحص إذا كان مفتاح Google Maps متوفر
-                const apiKey = '{{ config("services.google_maps.api_key") }}';
-                if (!apiKey || apiKey === '') {
-                    console.warn('مفتاح Google Maps API غير متوفر');
-                    document.getElementById('location-address').textContent = 'الموقع محدد بنجاح';
-                    document.getElementById('location-coordinates').textContent = 
-                        `إحداثيات: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-                    return;
-                }
-                
-                // تحسين الإحداثيات لتقليل التباين
-                const roundedLat = Math.round(lat * 1000000) / 1000000; // 6 خانات عشرية
-                const roundedLng = Math.round(lng * 1000000) / 1000000;
-                
-                const response = await fetch(
-                    `https://maps.googleapis.com/maps/api/geocode/json?latlng=${roundedLat},${roundedLng}&key=${apiKey}&language=ar&result_type=street_address|route|locality|administrative_area_level_1|country`
-                );
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                
-                if (data.status === 'OK' && data.results.length > 0) {
-                    // اختيار العنوان الأكثر تفصيلاً
-                    let address = data.results[0].formatted_address;
-                    
-                    // إذا كان العنوان طويل جداً، اختصار العنوان
-                    if (address.length > 100) {
-                        // البحث عن عنوان أقصر
-                        for (let i = 1; i < data.results.length && i < 3; i++) {
-                            if (data.results[i].formatted_address.length <= 100) {
-                                address = data.results[i].formatted_address;
-                                break;
+            const roundedLat = Math.round(lat * 1000000) / 1000000;
+            const roundedLng = Math.round(lng * 1000000) / 1000000;
+            const apiKey = @json(config('services.google_maps.api_key'));
+            let address = null;
+
+            // محاولة Google Maps اولاً
+            if (apiKey) {
+                try {
+                    const response = await fetch(
+                        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${roundedLat},${roundedLng}&key=${apiKey}&language=ar&result_type=street_address|route|locality|administrative_area_level_1|country`
+                    );
+                    if (!response.ok) throw new Error('Google Maps HTTP ' + response.status);
+                    const data = await response.json();
+                    if (data.status === 'OK' && data.results.length > 0) {
+                        address = data.results[0].formatted_address;
+                        if (address.length > 100) {
+                            for (let i = 1; i < data.results.length && i < 3; i++) {
+                                if (data.results[i].formatted_address.length <= 100) {
+                                    address = data.results[i].formatted_address;
+                                    break;
+                                }
                             }
                         }
                     }
-                    
-                    document.getElementById('location-address').textContent = address;
-                    
-                    // إضافة تحذير إذا كانت الدقة ضعيفة
-                    let accuracyText = `إحداثيات: ${roundedLat.toFixed(6)}, ${roundedLng.toFixed(6)} (دقة: ${currentLocation.accuracy.toFixed(1)}m)`;
-                    if (currentLocation.accuracy > 100) {
-                        accuracyText += ' ⚠️';
-                    }
-                    document.getElementById('location-coordinates').textContent = accuracyText;
-                    
-                    currentLocation.address = address;
-                    currentLocation.latitude = roundedLat;
-                    currentLocation.longitude = roundedLng;
-                } else {
-                    console.warn('Google Maps API error:', data.status, data.error_message);
-                    document.getElementById('location-address').textContent = 'الموقع محدد بنجاح';
-                    
-                    let accuracyText = `إحداثيات: ${roundedLat.toFixed(6)}, ${roundedLng.toFixed(6)} (دقة: ${currentLocation.accuracy.toFixed(1)}m)`;
-                    if (currentLocation.accuracy > 100) {
-                        accuracyText += ' ⚠️';
-                    }
-                    document.getElementById('location-coordinates').textContent = accuracyText;
+                } catch (e) {
+                    console.warn('Google Maps error:', e);
                 }
-            } catch (error) {
-                console.error('خطأ في الحصول على العنوان:', error);
-                document.getElementById('location-address').textContent = 'الموقع محدد بنجاح';
-                
-                let accuracyText = `إحداثيات: ${lat.toFixed(6)}, ${lng.toFixed(6)} (دقة: ${currentLocation.accuracy.toFixed(1)}m)`;
-                if (currentLocation.accuracy > 100) {
-                    accuracyText += ' ⚠️';
-                }
-                document.getElementById('location-coordinates').textContent = accuracyText;
             }
+
+            // Fallback: Nominatim (OpenStreetMap)
+            if (!address) {
+                try {
+                    const r = await fetch(
+                        'https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=' + roundedLat + '&lon=' + roundedLng + '&accept-language=ar',
+                        { headers: { 'Accept': 'application/json' } }
+                    );
+                    if (!r.ok) throw new Error('Nominatim HTTP ' + r.status);
+                    const d = await r.json();
+                    const p = d.address || {};
+                    const street = [p.house_number, p.road].filter(Boolean).join(' ');
+                    const parts = [
+                        street,
+                        p.neighbourhood || p.suburb || p.quarter,
+                        p.city || p.town || p.village || p.municipality,
+                        p.state || p.governorate,
+                        p.country
+                    ].filter(Boolean);
+                    address = [...new Set(parts)].join('، ') || d.display_name || null;
+                } catch (e) {
+                    console.warn('Nominatim error:', e);
+                }
+            }
+
+            // تحديث currentLocation وعرض العنوان
+            currentLocation.latitude  = roundedLat;
+            currentLocation.longitude = roundedLng;
+            currentLocation.address   = address;
+
+            document.getElementById('location-address').textContent =
+                address || 'الموقع محدد بنجاح';
+            document.getElementById('location-coordinates').textContent =
+                'دقة تحديد الموقع: ' + currentLocation.accuracy.toFixed(1) + ' متر';
         }
-        
-        function showLocationLoading() {
+                function showLocationLoading() {
             document.getElementById('location-info').style.display = 'block';
             document.getElementById('location-address').innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري تحديد الموقع...';
             document.getElementById('location-coordinates').textContent = 'يرجى الانتظار...';
@@ -1509,14 +1594,10 @@
                 return false;
             }
             
-            // التحقق من دقة الموقع (يجب أن تكون أقل من 500 متر - أكثر واقعية)
+            // تحذير إذا كانت الدقة ضعيفة ولكن التسجيل مسموح به دائماً
             if (location.accuracy > 500) {
-                console.warn(`دقة الموقع ضعيفة جداً: ${location.accuracy}m`);
-                return false;
-            }
-            
-            // تحذير إذا كانت الدقة ضعيفة ولكن مقبولة
-            if (location.accuracy > 100) {
+                console.warn(`دقة الموقع ضعيفة جداً: ${location.accuracy}m - سيتم التسجيل مع تحذير`);
+            } else if (location.accuracy > 100) {
                 console.warn(`دقة الموقع ضعيفة ولكن مقبولة: ${location.accuracy}m`);
             }
             
@@ -1554,20 +1635,40 @@
                     return; // المستخدم اختار الإلغاء
                 }
             }
+
+            // التحقق من إمكانية التسجيل (منطق الشفتات) قبل الإرسال
+            try {
+                const canRecordResponse = await fetch(`/api/attendance/can-record?type=${selectedType}`, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                const canRecordResult = await canRecordResponse.json();
+
+                if (canRecordResponse.ok && canRecordResult.success && !canRecordResult.data.can_record) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'لا يمكن التسجيل',
+                        text: canRecordResult.data.message,
+                        confirmButtonText: 'حسناً',
+                        confirmButtonColor: '#f59e0b'
+                    });
+                    // تحديث الواجهة لتعكس الحالة الحالية
+                    checkShiftStatus(selectedType);
+                    return;
+                }
+            } catch (checkError) {
+                console.warn('تعذّر التحقق من الشفت قبل التسجيل:', checkError);
+                // نكمل التسجيل — الخادم سيرد برسالة الخطأ المناسبة
+            }
             
             // إظهار Loading
             showLoading(true);
             
             try {
                 // التحقق من صحة الموقع
-                if (!validateLocation(currentLocation)) {
-                    throw new Error('الموقع غير صحيح أو غير دقيق بما فيه الكفاية (دقة الموقع: ' + currentLocation.accuracy.toFixed(1) + ' متر)');
-                }
-                
-                // تحذير المستخدم إذا كانت الدقة ضعيفة
-                if (currentLocation.accuracy > 100) {
-                    console.warn(`تحذير: دقة الموقع ضعيفة (${currentLocation.accuracy.toFixed(1)}m) ولكن مقبولة للتسجيل`);
-                }
+                validateLocation(currentLocation);
                 
                 // إعداد البيانات - الموقع إجباري
                 const projectCode = document.getElementById('project-code').value.trim();
@@ -1701,8 +1802,8 @@
                 if (response.ok && result.success && result.data) {
                     const attendance = result.data;
                     
-                    const typeText = attendance.type === 'check_in' ? 'دخول' : 'خروج';
-                    const date = new Date(attendance.date).toLocaleDateString('ar-SA');
+                    const typeText = attendance.type === 'check_in' ? '🟢 دخول' : '🔴 خروج';
+                    const date = new Date(attendance.date).toLocaleDateString('en-GB');
                     const time = attendance.time;
                     
                     // التحقق من وجود الموقع والعنوان
@@ -1716,26 +1817,68 @@
                                 locationText = 'موقع محدد';
                             }
                         } else if (attendance.location && typeof attendance.location === 'object') {
-                            // إذا كان location هو object (array من Laravel)
                             locationText = attendance.location.address || 'موقع محدد';
                         } else {
                             locationText = 'موقع محدد';
                         }
                     }
                     
-                    const projectCode = attendance.project_code ? `<br><small>كود المشروع: ${attendance.project_code}</small>` : '';
+                    const projectCode = attendance.project_code
+                        ? `<br><small>📋 كود المشروع: ${attendance.project_code}</small>`
+                        : '';
+
+                    // توجيه المستخدم للخطوة التالية
+                    let nextAction = '';
+                    if (attendance.type === 'check_in') {
+                        nextAction = `<div style="margin-top:6px;padding:5px 8px;background:#fff3cd;border-radius:6px;font-size:11px;color:#856404;">
+                            ⏳ أنت داخل حالياً — سجّل <strong>خروج</strong> عند المغادرة
+                        </div>`;
+                        // اضبط الزر الافتراضي على "خروج"
+                        document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+                        const checkOutBtn = document.querySelector('.type-btn[data-type="check_out"]');
+                        if (checkOutBtn) {
+                            checkOutBtn.classList.add('active');
+                            selectedType = 'check_out';
+                            updateAttendanceButton();
+                        }
+                    } else {
+                        nextAction = `<div style="margin-top:6px;padding:5px 8px;background:#d4edda;border-radius:6px;font-size:11px;color:#155724;">
+                            ✅ شفت منتهي — يمكنك تسجيل <strong>دخول شفت جديد</strong> متى شئت
+                        </div>`;
+                        // اضبط الزر الافتراضي على "دخول"
+                        document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+                        const checkInBtn = document.querySelector('.type-btn[data-type="check_in"]');
+                        if (checkInBtn) {
+                            checkInBtn.classList.add('active');
+                            selectedType = 'check_in';
+                            updateAttendanceButton();
+                        }
+                    }
+
                     lastAttendanceInfo.innerHTML = `
-                        <strong>${typeText}</strong> - ${date} في ${time}<br>
-                        <small>الموقع: ${locationText}</small><br>
+                        <strong>${typeText}</strong> — ${date} في ${time}<br>
+                        <small>📍 الموقع: ${locationText}</small><br>
                         <small>الحالة: ${getStatusText(attendance.status)}</small>${projectCode}
-                        
+                        ${nextAction}
                     `;
+
+                    // تحديث حالة الشفت في الواجهة
+                    checkShiftStatus(selectedType);
+
                 } else {
                     // لا توجد بصمة سابقة
                     lastAttendanceInfo.innerHTML = `
                         <i class="fas fa-info-circle" style="color: #6c757d;"></i>
-                        لا توجد بصمة سابقة
+                        لا توجد بصمة سابقة — ابدأ بتسجيل <strong>دخول</strong>
                     `;
+                    // اضبط الزر على "دخول" كافتراضي
+                    document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+                    const checkInBtn = document.querySelector('.type-btn[data-type="check_in"]');
+                    if (checkInBtn) {
+                        checkInBtn.classList.add('active');
+                        selectedType = 'check_in';
+                        updateAttendanceButton();
+                    }
                 }
             } catch (error) {
                 console.error('خطأ في تحميل آخر بصمة:', error);
@@ -1767,6 +1910,9 @@
         
         // تحديث الموقع كل 5 دقائق
         setInterval(getCurrentLocation, 5 * 60 * 1000);
+
+        // تحديث مؤشر النطاق عند تغيير كود المشروع
+        document.getElementById('project-code')?.addEventListener('input', updateGeofenceStatus);
         
         // دالة تسجيل خروج الموظف
         async function logoutEmployee() {

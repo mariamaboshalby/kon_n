@@ -16,6 +16,12 @@ return new class extends Migration
             $table->string('title', 200);
             $table->foreignId('city_id')->constrained('cities')->onDelete('cascade');
             $table->timestamps();
+            $table->decimal('distance', 8, 2)->nullable();
+            $table->decimal('latitude', 10, 7)->nullable();
+            $table->decimal('longitude', 10, 7)->nullable();
+            $table->decimal('distance_from_headquarters', 8, 2)->nullable();
+        
+        
         });
     }
 

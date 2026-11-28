@@ -5,70 +5,56 @@
 @endsection
 
 @section('content')
-    @include('components.breadcrumb', [
-        'title' => __('hr.monthly_activity_report'),
-        'breadcrumb_items' => [
+    <x-reports::report-page
+        :title="__('hr.monthly_activity_report')"
+        :breadcrumbs="[
             ['label' => __('general.home'), 'url' => route('admin.dashboard')],
             ['label' => __('hr.human_resources')],
             ['label' => __('hr.attendance')],
             ['label' => __('hr.monthly_activity_report')],
-        ],
-    ])
-
+        ]"
+        filter-collapse-id="hr-monthly-filters-collapse"
+        print-only
+        :with-card="false"
+    >
     @php
         $summary = $reportData['summary'];
     @endphp
 
-    <div class="container-fluid">
-
-        {{-- ── Filters ──────────────────────────────────────────────────────── --}}
-        <div class="card mb-4 shadow-sm border-top border-4 border-primary">
-            <div class="card-header bg-white py-3">
-                <h5 class="card-title mb-0 d-flex align-items-center gap-2">
-                    <i class="las la-filter text-primary fs-4"></i>
-                    {{ __('hr.report_filters') }}
-                </h5>
-            </div>
-            <div class="card-body">
-                <form method="GET" action="{{ route('hr.attendance.reports.monthly-activity') }}"
-                      class="row g-3 align-items-end">
-
-                    <div class="col-md-2">
-                        <label class="form-label fw-bold">{{ __('hr.date_from') }}</label>
-                        <input type="date" name="date_from" value="{{ $dateFrom }}" class="form-control" />
-                    </div>
-
-                    <div class="col-md-2">
-                        <label class="form-label fw-bold">{{ __('hr.date_to') }}</label>
-                        <input type="date" name="date_to" value="{{ $dateTo }}" class="form-control" />
-                    </div>
-
-                    <div class="col-md-3">
-                        <label class="form-label fw-bold">{{ __('hr.department') }}</label>
-                        <select name="department_id" class="form-select">
-                            <option value="">{{ __('hr.all_departments') }}</option>
-                            @foreach($departments as $dept)
-                                <option value="{{ $dept->id }}" @selected($departmentId == $dept->id)>
-                                    {{ $dept->title }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div class="col-md-2">
-                        <button type="submit" class="btn btn-primary w-100">
-                            <i class="las la-search me-1"></i>
-                            {{ __('hr.generate_report') }}
-                        </button>
-                    </div>
-
-                    <div class="col-md-3 d-flex align-items-end justify-content-end">
-                        <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
-                            <i class="las la-print me-1"></i>
-                            {{ __('general.print') }}
-                        </button>
-                    </div>
-                </form>
+        <div class="collapse mb-3 report-filters-collapse" id="hr-monthly-filters-collapse">
+            <div class="card mb-0">
+                <div class="card-body">
+                    <form method="GET" action="{{ route('hr.attendance.reports.monthly-activity') }}" class="report-filters">
+                        <div class="row g-2 align-items-start">
+                            <div class="col-12 col-md-6 col-lg-3 report-filters-col">
+                                <div class="mb-2">
+                                    <label class="form-label report-filter-label mb-1" for="hr-monthly-date-from">{{ __('hr.date_from') }}</label>
+                                    <input type="date" name="date_from" id="hr-monthly-date-from" value="{{ $dateFrom }}" class="form-control report-filter-control">
+                                </div>
+                                <div class="mb-0">
+                                    <label class="form-label report-filter-label mb-1" for="hr-monthly-date-to">{{ __('hr.date_to') }}</label>
+                                    <input type="date" name="date_to" id="hr-monthly-date-to" value="{{ $dateTo }}" class="form-control report-filter-control">
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-3 report-filters-col">
+                                <div class="mb-0">
+                                    <label class="form-label report-filter-label mb-1" for="hr-monthly-search">{{ __('hr.employee') }}</label>
+                                    <input type="text" name="search_name" id="hr-monthly-search" value="{{ $searchName }}" class="form-control report-filter-control" placeholder="{{ __('hr.search_employee_name') }}">
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-3 report-filters-col">
+                                <div class="d-flex flex-wrap gap-2 mt-1">
+                                    <button type="submit" class="btn btn-sm btn-primaryyy">
+                                        <i class="fas fa-filter me-1"></i>{{ __('hr.generate_report') }}
+                                    </button>
+                                    <a href="{{ route('hr.attendance.reports.monthly-activity') }}" class="btn btn-sm btn-secondary">
+                                        <i class="fas fa-redo me-1"></i>{{ __('reports::reports.reset') }}
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
 
@@ -109,7 +95,8 @@
                         <div class="d-flex justify-content-between align-items-start">
                             <div>
                                 <div class="small text-muted text-uppercase fw-bold">{{ __('hr.avg_attendance_pct') }}</div>
-                                <div class="fs-2 fw-bold text-success">{{ $summary['avg_attendance_pct'] }}%</div>
+                                <div class="fs-3 fw-bold text-success">{{ $summary['total_present_days'] }}</div>
+                                <small class="text-muted d-block">{{ $summary['avg_attendance_pct'] }}%</small>
                             </div>
                             <i class="las la-chart-pie fs-1 text-success opacity-25"></i>
                         </div>
@@ -147,6 +134,7 @@
                             <div>
                                 <div class="small text-muted text-uppercase fw-bold">{{ __('hr.total_absent_days') }}</div>
                                 <div class="fs-2 fw-bold text-danger">{{ $summary['total_absent_days'] }}</div>
+                                <small class="text-muted d-block">{{ round(($summary['total_absent_days'] / ($summary['total_employees'] * $summary['working_days'])) * 100, 1) }}%</small>
                             </div>
                             <i class="las la-user-times fs-1 text-danger opacity-25"></i>
                         </div>
@@ -169,6 +157,24 @@
                 </div>
             </div>
 
+            {{-- Total Work Hours --}}
+            <div class="col-6 col-md-3 col-xl-2">
+                <div class="card border-0 shadow-sm h-100 border-bottom border-3 border-info">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <div class="small text-muted text-uppercase fw-bold">ساعات العمل</div>
+                                <div class="fs-2 fw-bold text-info">{{ number_format($summary['total_present_days'] * 8, 0) }}</div>
+                            </div>
+                            <i class="las la-hourglass-end fs-1 text-info opacity-25"></i>
+                        </div>
+                        <div class="small text-muted mt-2">
+                            ~ {{ round(($summary['total_present_days'] * 8) / $summary['total_employees'], 1) }} سا/موظف
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {{-- Total Late Days --}}
             <div class="col-6 col-md-3 col-xl-2">
                 <div class="card border-0 shadow-sm h-100 border-bottom border-3 border-orange">
@@ -177,6 +183,7 @@
                             <div>
                                 <div class="small text-muted text-uppercase fw-bold">{{ __('hr.total_late_days') }}</div>
                                 <div class="fs-2 fw-bold" style="color:#fd7e14">{{ $summary['total_late_days'] }}</div>
+                                <small class="text-muted d-block">{{ round(($summary['total_late_days'] / ($summary['total_employees'] * $summary['working_days'])) * 100, 1) }}%</small>
                             </div>
                             <i class="las la-clock fs-1 opacity-25" style="color:#fd7e14"></i>
                         </div>
@@ -213,7 +220,7 @@
                                 <tr>
                                     <td class="px-4 py-3 fw-bold">{{ $dept['department'] }}</td>
                                     <td class="py-3 text-center">
-                                        <span class="badge bg-primary rounded-pill">{{ $dept['employee_count'] }}</span>
+                                        <span class="badge bg-primary text-white rounded-pill">{{ $dept['employee_count'] }}</span>
                                     </td>
                                     <td class="py-3 text-center text-success fw-bold">{{ $dept['avg_present'] }}</td>
                                     <td class="py-3 text-center text-danger fw-bold">{{ $dept['avg_absent'] }}</td>
@@ -283,7 +290,17 @@
                                 @foreach($reportData['rows'] as $i => $row)
                                     <tr>
                                         <td class="px-4 py-3 text-muted small">{{ $i + 1 }}</td>
-                                        <td class="py-3 fw-bold">{{ $row['employee_name'] }}</td>
+                                        <td class="py-3">
+                                            <a href="javascript:void(0)" 
+                                               class="hr-employee-report-trigger text-primary text-decoration-none fw-bold d-inline-flex align-items-center gap-1"
+                                               data-employee-id="{{ $row['employee_id'] }}"
+                                               data-employee-name="{{ $row['employee_name'] }}"
+                                               title="{{ __('hr.view_employee_report') }}"
+                                               style="cursor: pointer;">
+                                                <i class="las la-user-circle fs-5"></i>
+                                                <span>{{ $row['employee_name'] }}</span>
+                                            </a>
+                                        </td>
                                         <td class="py-3 text-muted small">{{ $row['department'] }}</td>
 
                                         {{-- Present --}}
@@ -376,9 +393,10 @@
             </div>
         </div>
 
-    </div>
+    </x-reports::report-page>
 
     <style>
+        .hr-employee-report-trigger:hover { text-decoration: underline !important; opacity: 0.85; }
         @media print {
             .card-header form,
             .btn { display: none !important; }
@@ -386,3 +404,32 @@
         }
     </style>
 @endsection
+
+@push('scripts')
+<script>
+(function($) {
+    'use strict';
+
+    var reportRouteTpl = @json(route('hr.attendance.reports.daily.employee-comprehensive', ['employee' => '__ID__']));
+
+    // Click on employee name in monthly report table -> Navigate to dedicated comprehensive report page
+    $(document).on('click', '.hr-employee-report-trigger', function(e) {
+        e.preventDefault();
+        var employeeId = $(this).data('employee-id');
+        if (!employeeId) return;
+
+        // Extract dates from monthly activity page filter inputs
+        var dateFrom = $('input[name="date_from"]').val() || '';
+        var dateTo = $('input[name="date_to"]').val() || dateFrom;
+
+        var url = reportRouteTpl.replace('__ID__', employeeId) +
+            '?date_from=' + encodeURIComponent(dateFrom) +
+            '&date_to=' + encodeURIComponent(dateTo);
+
+        window.location.href = url;
+    });
+
+})(jQuery);
+</script>
+@endpush
+

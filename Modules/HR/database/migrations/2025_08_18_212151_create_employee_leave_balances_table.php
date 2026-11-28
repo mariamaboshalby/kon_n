@@ -14,15 +14,15 @@ return new class extends Migration
             $table->foreignId('leave_type_id')->constrained('leave_types')->onDelete('cascade');
             $table->unsignedSmallInteger('year')->index();
             $table->decimal('opening_balance_days', 6, 2)->default(0);
-            $table->decimal('accrued_days', 6, 2)->default(0); // المتراكم خلال السنة
             $table->decimal('used_days', 6, 2)->default(0);
             $table->decimal('pending_days', 6, 2)->default(0);
-            $table->decimal('carried_over_days', 6, 2)->default(0);
             $table->text('notes')->nullable();
             $table->timestamps();
-
-            // Unique index على (employee_id, leave_type_id, year)
             $table->unique(['employee_id', 'leave_type_id', 'year']);
+            $table->decimal('max_monthly_days', 6, 2)->nullable();
+            $table->json('monthly_used_days')->nullable();
+
+        
         });
     }
 

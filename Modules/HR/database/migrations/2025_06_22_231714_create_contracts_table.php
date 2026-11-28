@@ -29,6 +29,10 @@ return new class extends Migration
             $table->foreignId('created_by')->constrained('users');
             $table->timestamps();
             $table->index('contract_type_id');
+            $table->unsignedBigInteger('interview_id')->nullable();
+            $table->unsignedBigInteger('cv_id')->nullable();
+        
+        
         });
     }
 

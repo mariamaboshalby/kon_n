@@ -38,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'employee.auth' => \Modules\HR\Http\Middleware\EmployeeAuth::class,
+            'module.access' => \App\Http\Middleware\EnsureModuleAccess::class,
             'engineer.access' => \Modules\Inquiries\Middleware\EngineerAccessMiddleware::class,
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,

@@ -68,7 +68,7 @@ class AttendanceProcessingTestSeeder extends Seeder
             $this->generateAttendanceForEmployee($employee, $startDate, $endDate);
         }
 
-        $this->command->info('تم إنشاء بيانات الحضور التجريبية بنجاح!');
+        $this->command->info('Attendance test data created successfully.');
     }
 
     /**

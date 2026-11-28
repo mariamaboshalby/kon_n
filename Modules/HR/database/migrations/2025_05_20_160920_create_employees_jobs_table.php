@@ -9,10 +9,11 @@ class CreateEmployeesJobsTable extends Migration {
 	public function up()
 	{
 		Schema::create('employees_jobs', function(Blueprint $table) {
-			$table->id();
-			$table->string('title')->unique();
-			$table->text('description')->nullable();
-			$table->timestamps();
+            $table->id();
+            $table->string('title');
+            $table->text('description')->nullable();
+            $table->timestamps();
+        
 		});
 	}
 

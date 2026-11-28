@@ -13,6 +13,9 @@
                     @if(in_array('department', $columns))
                         <th class="py-3">{{ __('hr.department') }}</th>
                     @endif
+                    @if(in_array('project_code', $columns))
+                        <th class="py-3">{{ __('hr.project_code') }}</th>
+                    @endif
                     @if(in_array('shift', $columns))
                         <th class="py-3">{{ __('hr.shift') }}</th>
                     @endif
@@ -68,12 +71,29 @@
                         @endif
                         @if(in_array('name', $columns))
                             <td class="py-3">
-                                <div class="fw-bold">{{ $row['name'] }}</div>
-                                <small class="text-muted">#{{ $row['finger_print_id'] }}</small>
+                                <a href="javascript:void(0)" 
+                                   class="hr-employee-report-trigger text-primary text-decoration-none fw-bold d-inline-flex align-items-center gap-1"
+                                   data-employee-id="{{ $row['id'] }}"
+                                   data-employee-name="{{ $row['name'] }}"
+                                   title="{{ __('hr.view_employee_report') }}"
+                                   style="cursor: pointer;">
+                                    <i class="las la-user-circle fs-5"></i>
+                                    <span>{{ $row['name'] }}</span>
+                                </a>
+                                <small class="text-muted d-block">#{{ $row['finger_print_id'] }}</small>
                             </td>
                         @endif
                         @if(in_array('department', $columns))
                             <td class="py-3 text-muted">{{ $row['department'] }}</td>
+                        @endif
+                        @if(in_array('project_code', $columns))
+                            <td class="py-3">
+                                @if(!empty($row['project_code']) && $row['project_code'] !== '-')
+                                    <span class="badge bg-primary-subtle text-primary fw-bold">{{ $row['project_code'] }}</span>
+                                @else
+                                    <span class="text-muted">-</span>
+                                @endif
+                            </td>
                         @endif
                         @if(in_array('shift', $columns))
                             <td class="py-3 text-muted">{{ $row['shift'] }}</td>
@@ -102,9 +122,14 @@
                         @endif
                         @if(in_array('late_minutes', $columns))
                             <td class="py-3 text-center">
-                                @if(!empty($row['late_minutes']) && $row['late_minutes'] > 0)
+                                @php
+                                    $lateMin = (int) ($row['late_minutes'] ?? 0);
+                                    $lateH   = intdiv($lateMin, 60);
+                                    $lateM   = $lateMin % 60;
+                                @endphp
+                                @if($lateMin > 0)
                                     <span class="badge bg-danger">
-                                        {{ $row['late_minutes'] }} {{ __('hr.minutes') }}
+                                        {{ sprintf('%02d:%02d', $lateH, $lateM) }} سا
                                     </span>
                                 @else
                                     <span class="text-muted">-</span>

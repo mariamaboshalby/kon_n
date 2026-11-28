@@ -8,7 +8,11 @@
     window.addEventListener('load', function () {
       const loader = document.getElementById('loader-wrapper');
       const content = document.getElementById('content');
-      loader.style.display = 'none';
-      content.style.visibility = 'visible';
+      if (loader) {
+        loader.style.display = 'none';
+      }
+      if (content) {
+        content.style.visibility = 'visible';
+      }
     });
   </script>

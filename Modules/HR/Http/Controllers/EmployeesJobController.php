@@ -1,72 +1,102 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Modules\HR\Http\Controllers;
 
-use Modules\HR\Models\EmployeesJob;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\View\View;
+use Modules\HR\Models\EmployeesJob;
+use Modules\HR\Services\JobService;
 
 class EmployeesJobController extends Controller
 {
-    public function __construct()
-    {
-        $this->middleware('can:view Jobs')->only(['index']);
-        $this->middleware('can:create Jobs')->only(['create', 'store']);
-        $this->middleware('can:edit Jobs')->only(['edit', 'update']);
+    public function __construct(
+        private readonly JobService $jobService
+    ) {
+        $this->middleware('can:view Jobs')->only(['index', 'data']);
+        $this->middleware('can:create Jobs')->only(['store']);
+        $this->middleware('can:edit Jobs')->only(['update']);
         $this->middleware('can:delete Jobs')->only(['destroy']);
-        $this->middleware('can:print Jobs')->only(['print']);
     }
 
-    public function index()
+    public function index(): View
     {
-        return view('hr::hr-management.jobs.manage-jobs');
+        $defaultLevels = [
+            __('hr::hr.job_level_beginner'),
+            __('hr::hr.job_level_intermediate'),
+            __('hr::hr.job_level_professional'),
+        ];
+
+        $savedLevels = EmployeesJob::query()
+            ->whereNotNull('level')
+            ->where('level', '!=', '')
+            ->distinct()
+            ->orderBy('level')
+            ->pluck('level')
+            ->all();
+
+        $jobLevels = collect($defaultLevels)
+            ->merge($savedLevels)
+            ->unique()
+            ->values();
+
+        return view('hr::hr-management.jobs.manage-jobs', [
+            'jobLevels' => $jobLevels,
+        ]);
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function data(Request $request): JsonResponse
     {
-        //
+        return response()->json([
+            'data' => $this->jobService->list(
+                $request->string('search')->toString() ?: null,
+                $request->string('level')->toString() ?: null,
+            ),
+        ]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
+    public function store(Request $request): JsonResponse
     {
-        //
+        $validated = $request->validate([
+            'title' => 'required|string|min:2|max:255',
+            'description' => 'nullable|string|max:255',
+            'level' => 'nullable|string|max:255',
+        ]);
+
+        $this->jobService->create($validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => __('hr::hr.job_created_successfully'),
+        ]);
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(EmployeesJob $employeesJob)
+    public function update(Request $request, EmployeesJob $job): JsonResponse
     {
-        //
+        $validated = $request->validate([
+            'title' => 'required|string|min:2|max:255',
+            'description' => 'nullable|string|max:255',
+            'level' => 'nullable|string|max:255',
+        ]);
+
+        $this->jobService->update($job, $validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => __('hr::hr.job_updated_successfully'),
+        ]);
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(EmployeesJob $employeesJob)
+    public function destroy(EmployeesJob $job): JsonResponse
     {
-        //
-    }
+        $this->jobService->delete($job);
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, EmployeesJob $employeesJob)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(EmployeesJob $employeesJob)
-    {
-        //
+        return response()->json([
+            'success' => true,
+            'message' => __('hr::hr.job_deleted_successfully'),
+        ]);
     }
 }

@@ -2,7 +2,10 @@
 
 namespace Modules\HR\Providers;
 
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Nwidart\Modules\Traits\PathNamespace;
 use RecursiveDirectoryIterator;
@@ -22,12 +25,12 @@ class HRServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->registerCommands();
+        $this->registerPortalRateLimiters();
         $this->registerCommandSchedules();
         $this->registerTranslations();
         $this->registerConfig();
         $this->registerViews();
-        $this->loadMigrationsFrom(module_path($this->name, 'database/migrations'));
-        $this->registerLivewireComponents();
+        // [Multi-Tenancy] Module migrations run on tenant DBs only via tenants:migrate (config/tenancy.php migration_parameters). Not on the central migrator.
     }
 
     /**
@@ -44,7 +47,36 @@ class HRServiceProvider extends ServiceProvider
      */
     protected function registerCommands(): void
     {
-        // $this->commands([]);
+        $this->commands([
+            \Modules\HR\Console\PortalCheckinRemindersCommand::class,
+            \Modules\HR\Console\CheckContractExpiryCommand::class,
+            \Modules\HR\Console\CheckEmployeeDocumentExpiryCommand::class,
+        ]);
+    }
+
+    /**
+     * Rate limiters for the employee portal API — keyed per tenant + employee (not IP only):
+     * employees of one branch share the same public IP (office Wi-Fi / carrier NAT).
+     */
+    protected function registerPortalRateLimiters(): void
+    {
+        $tenantKey = static fn (): string => (string) (function_exists('tenant') ? (tenant('id') ?? 'central') : 'central');
+        $employeeKey = static function (Request $request) use ($tenantKey): string {
+            $employee = $request->attributes->get('portal_employee');
+
+            return $tenantKey().':'.($employee ? 'emp:'.$employee->id : 'ip:'.$request->ip());
+        };
+
+        RateLimiter::for('employee-portal-public', static fn (Request $request) => Limit::perMinute(300)->by($tenantKey().':'.$request->ip()));
+
+        RateLimiter::for('employee-portal-login', static fn (Request $request) => [
+            Limit::perMinute(10)->by($tenantKey().':login:'.mb_strtolower(trim((string) $request->input('login'))).':'.$request->ip()),
+            Limit::perMinute(300)->by($tenantKey().':login-ip:'.$request->ip()),
+        ]);
+
+        RateLimiter::for('employee-portal-punch', static fn (Request $request) => Limit::perMinute(6)->by('punch:'.$employeeKey($request)));
+
+        RateLimiter::for('employee-portal-write', static fn (Request $request) => Limit::perMinute(30)->by('write:'.$employeeKey($request)));
     }
 
     /**
@@ -153,6 +185,9 @@ class HRServiceProvider extends ServiceProvider
 
         $this->loadViewsFrom(array_merge($this->getPublishableViewPaths(), [$sourcePath]), $this->nameLower);
 
+        // BC: recruitment:: views + x-recruitment:: components after merge into HR
+        $this->loadViewsFrom([$sourcePath], 'recruitment');
+
         Blade::componentNamespace(config('modules.namespace').'\\' . $this->name . '\\View\\Components', $this->nameLower);
     }
 
@@ -174,109 +209,5 @@ class HRServiceProvider extends ServiceProvider
         }
 
         return $paths;
-    }
-
-    /**
-     * Register Livewire components.
-     */
-    protected function registerLivewireComponents(): void
-    {
-        if (class_exists(\Livewire\Livewire::class)) {
-            // Register a resolver for hr:: namespaced Volt components
-            // This allows using <livewire:hr::hr-management.* /> syntax
-            $livewirePath = module_path($this->name, 'resources/views/livewire');
-            
-            if (is_dir($livewirePath) && class_exists(\Livewire\Volt\Volt::class)) {
-                \Livewire\Livewire::resolveMissingComponent(function (string $name) use ($livewirePath) {
-                    // Only handle hr:: namespaced components
-                    if (!str_starts_with($name, 'hr::')) {
-                        return null;
-                    }
-                    
-                    // Remove the hr:: prefix and convert dots to directory separators
-                    $componentPath = str_replace('.', DIRECTORY_SEPARATOR, substr($name, 4));
-                    $fullPath = $livewirePath . DIRECTORY_SEPARATOR . $componentPath . '.blade.php';
-                    
-                    if (file_exists($fullPath)) {
-                        // Use Volt's ComponentFactory to compile and return the component class
-                        $factory = app(\Livewire\Volt\ComponentFactory::class);
-                        return $factory->make($name, $fullPath);
-                    }
-                    
-                    return null;
-                });
-            }
-
-            // Register class-based Livewire components
-            \Livewire\Livewire::component(
-                'hr::flexible-salary-processor',
-                \Modules\HR\Livewire\FlexibleSalaryProcessor::class
-            );
-            \Livewire\Livewire::component(
-                'hr::flexible-salary-processing.index',
-                \Modules\HR\Livewire\FlexibleSalaryProcessing\Index::class
-            );
-            \Livewire\Livewire::component(
-                'hr::flexible-salary-processing.create',
-                \Modules\HR\Livewire\FlexibleSalaryProcessing\Create::class
-            );
-            \Livewire\Livewire::component(
-                'hr::flexible-salary-processing.edit',
-                \Modules\HR\Livewire\FlexibleSalaryProcessing\Edit::class
-            );
-            \Livewire\Livewire::component(
-                'hr::employee-advances.manage',
-                \Modules\HR\Livewire\EmployeeAdvances\ManageEmployeeAdvances::class
-            );
-            \Livewire\Livewire::component(
-                'hr::employee-deductions-rewards.manage',
-                \Modules\HR\Livewire\EmployeeDeductionsRewards\ManageEmployeeDeductionsRewards::class
-            );
-            \Livewire\Livewire::component(
-                'hr::attendance-processing-manager',
-                \Modules\HR\Livewire\AttendanceProcessingManager::class
-            );
-            \Livewire\Livewire::component(
-                'hr::leaves.leave-requests.index',
-                \Modules\HR\Livewire\Leaves\LeaveRequests\Index::class
-            );
-            \Livewire\Livewire::component(
-                'hr::leaves.leave-requests.trashed',
-                \Modules\HR\Livewire\Leaves\LeaveRequests\Trashed::class
-            );
-            \Livewire\Livewire::component(
-                'hr::leaves.leave-requests.create',
-                \Modules\HR\Livewire\Leaves\LeaveRequests\Create::class
-            );
-            \Livewire\Livewire::component(
-                'hr::leaves.leave-requests.edit',
-                \Modules\HR\Livewire\Leaves\LeaveRequests\Edit::class
-            );
-            \Livewire\Livewire::component(
-                'hr::leaves.leave-requests.show',
-                \Modules\HR\Livewire\Leaves\LeaveRequests\Show::class
-            );
-            \Livewire\Livewire::component(
-                'hr::leaves.leave-balances.index',
-                \Modules\HR\Livewire\Leaves\LeaveBalances\Index::class
-            );
-            \Livewire\Livewire::component(
-                'hr::leaves.leave-balances.create-edit',
-                \Modules\HR\Livewire\Leaves\LeaveBalances\CreateEdit::class
-            );
-            \Livewire\Livewire::component(
-                'hr::leaves.leave-types.manage-leave-types',
-                \Modules\HR\Livewire\Leaves\LeaveTypes\ManageLeaveTypes::class
-            );
-            \Livewire\Livewire::component(
-                'hr::hr-settings.index',
-                \Modules\HR\Livewire\HrManagement\HrSettings\Index::class
-            );
-            \Livewire\Livewire::component(
-                'hr::hr-settings.create-edit',
-                \Modules\HR\Livewire\HrManagement\HrSettings\CreateEdit::class
-            );
-        }
-        // Volt components are auto-discovered from resources/views/livewire
     }
 }

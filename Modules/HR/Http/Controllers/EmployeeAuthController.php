@@ -202,15 +202,18 @@ class EmployeeAuthController extends Controller
                 'data' => [
                     'logged_in' => true,
                     'employee' => [
-                        'id' => $employee->id,
-                        'name' => $employee->name,
-                        'position' => $employee->position,
-                        'status' => $employee->status,
-                        'finger_print_id' => $employee->finger_print_id,
+                        'id'                => $employee->id,
+                        'name'              => $employee->name,
+                        'position'          => $employee->position,
+                        'status'            => $employee->status,
+                        'finger_print_id'   => $employee->finger_print_id,
                         'finger_print_name' => $employee->finger_print_name,
-                        'department' => $employee->department,
-                        'job' => $employee->job,
-                        'shift' => $employee->shift
+                        'department'        => $employee->department,
+                        'job'               => $employee->job,
+                        'shift'             => $employee->shift,
+                        'require_location'  => (bool) $employee->require_location,
+                        'location_type'     => $employee->location_type,
+                        'allow_remote_work' => (bool) $employee->allow_remote_work,
                     ]
                 ]
             ]);

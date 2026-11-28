@@ -1,70 +1,79 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Modules\HR\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\View\View;
+use Modules\HR\Models\City;
+use Modules\HR\Models\State;
+use Modules\HR\Services\AddressService;
 
 class CityController extends Controller
 {
-
-    public function __construct()
-    {
-        $this->middleware('can:view Cities')->only(['index']);
-        $this->middleware('can:create Cities')->only(['create', 'store']);
-        $this->middleware('can:edit Cities')->only(['edit', 'update']);
+    public function __construct(
+        private readonly AddressService $addressService
+    ) {
+        $this->middleware('can:view Cities')->only(['index', 'data']);
+        $this->middleware('can:create Cities')->only(['store']);
+        $this->middleware('can:edit Cities')->only(['update']);
         $this->middleware('can:delete Cities')->only(['destroy']);
     }
-    public function index()
+
+    public function index(): View
     {
-        return view('hr::hr-management.addresses.manage-cities');
+        return view('hr::hr-management.addresses.manage-cities', [
+            'states' => State::query()->orderBy('title')->get(['id', 'title']),
+        ]);
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function data(Request $request): JsonResponse
     {
-        //
+        return response()->json([
+            'data' => $this->addressService->listCities($request->string('search')->toString() ?: null),
+        ]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
+    public function store(Request $request): JsonResponse
     {
-        //
+        $validated = $request->validate([
+            'title' => 'required|string|min:2|max:255|unique:cities,title',
+            'state_id' => 'required|exists:states,id',
+        ]);
+
+        $this->addressService->createCity($validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => __('hr::hr.city_created_successfully'),
+        ]);
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
+    public function update(Request $request, City $city): JsonResponse
     {
-        //
+        $validated = $request->validate([
+            'title' => 'required|string|min:2|max:255|unique:cities,title,'.$city->id,
+            'state_id' => 'required|exists:states,id',
+        ]);
+
+        $this->addressService->updateCity($city, $validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => __('hr::hr.city_updated_successfully'),
+        ]);
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(string $id)
+    public function destroy(City $city): JsonResponse
     {
-        //
-    }
+        $this->addressService->deleteCity($city);
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
+        return response()->json([
+            'success' => true,
+            'message' => __('hr::hr.city_deleted_successfully'),
+        ]);
     }
 }

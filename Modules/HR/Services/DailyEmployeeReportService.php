@@ -21,6 +21,7 @@ class DailyEmployeeReportService
      * @param string      $dateTo       End date in Y-m-d format
      * @param int|null    $departmentId Optional department filter
      * @param int|null    $employeeId   Optional employee filter
+     * @param string      $searchName   Optional employee name search
      * @return array
      */
     public function generateDailyReport(
@@ -28,6 +29,7 @@ class DailyEmployeeReportService
         string $dateTo,
         ?int $departmentId = null,
         ?int $employeeId = null,
+        string $searchName = '',
     ): array {
         $from = Carbon::parse($dateFrom)->startOfDay();
         $to   = Carbon::parse($dateTo)->startOfDay();
@@ -46,6 +48,10 @@ class DailyEmployeeReportService
 
         if ($employeeId) {
             $employeesQuery->where('id', $employeeId);
+        }
+
+        if ($searchName) {
+            $employeesQuery->where('name', 'like', '%' . $searchName . '%');
         }
 
         $employees = $employeesQuery->get();
@@ -71,6 +77,92 @@ class DailyEmployeeReportService
             'early_departure_count'        => array_sum(array_column($days, 'early_departure_count')),
             'pending_leave_requests_count' => array_sum(array_column($days, 'pending_leave_requests_count')),
         ];
+
+        // Calculate total work hours from attendance records
+        $totalWorkHours = 0;
+        $totalOvertimeMinutes = 0;
+
+        // Fetch one extra day for overnight shifts so post-midnight exits can be
+        // re-attributed to their work day, then group every employee's punches by
+        // work day (same rule as the salary engine) before pairing check-in/out.
+        $employeeShifts = $employees->pluck('shift', 'id');
+        $needsExtraDay = $employees->contains(fn ($e) => $e->shift && $e->shift->isOvernightShift());
+        $hoursFetchEnd = $needsExtraDay ? $to->copy()->addDay() : $to->copy();
+
+        $allPunches = Attendance::whereIn('employee_id', $employees->pluck('id'))
+            ->whereBetween('date', [$from->toDateString(), $hoursFetchEnd->toDateString()])
+            ->where('status', 'approved')
+            ->orderBy('date')
+            ->orderBy('time')
+            ->get();
+
+        $approvedByWorkday = collect();
+        foreach ($allPunches->groupBy('employee_id') as $empId => $records) {
+            foreach (OvernightAttendanceService::groupByWorkday($records, $employeeShifts->get($empId)) as $dateStr => $group) {
+                // إعادة النسب بيُنقل الانصراف لمجموعة اليوم السابق، فالتاريخ
+                // المخزَّن على السجل نفسه مش بالضرورة يوم الشغل — بنثبّت
+                // يوم الشغل في مفتاح المجموعة ($dateStr) ونستخدمه في الحساب.
+                $approvedByWorkday->put($empId . '|' . $dateStr, [
+                    'workday' => $dateStr,
+                    'records' => collect($group),
+                ]);
+            }
+        }
+
+        // Aggregate per employee per work day: first check-in + last check-out,
+        // mirroring the salary engine's pairing instead of one row per punch.
+        foreach ($approvedByWorkday as $entry) {
+            $group = $entry['records'];
+
+            // تجاهل يوم الشغل اللي برّه النطاق (يوم إضافي اجتبناه بس عشان
+            // نلمّ انصراف ما بعد منتصف الليل الخاص بآخر يوم في النطاق).
+            $workday = $entry['workday'];
+            if ($workday < $from->toDateString() || $workday > $to->toDateString()) {
+                continue;
+            }
+
+            $firstCheckIn = $group->where('type', 'check_in')->sortBy('time')->first();
+            $lastCheckOut = $group->where('type', 'check_out')->sortBy('time')->last();
+
+            if (! $firstCheckIn || ! $lastCheckOut) {
+                continue;
+            }
+
+            $employee = $employees->find($group->first()->employee_id);
+            $shift = $employee?->shift;
+
+            $checkInTime = Carbon::parse($workday . ' ' . $firstCheckIn->time);
+            $checkOutTime = Carbon::parse($workday . ' ' . $lastCheckOut->time);
+
+            // Overnight shift: an exit earlier than the entry belongs to the
+            // next calendar day (post-midnight end of this work day's shift).
+            if ($shift && $shift->isOvernightShift() && $lastCheckOut->time < $firstCheckIn->time) {
+                $checkOutTime->addDay();
+            }
+
+            $hours = (int) round(abs($checkInTime->diffInMinutes($checkOutTime))) / 60;
+
+            if ($shift && $shift->start_time && $shift->end_time) {
+                $refDate = Carbon::parse('2000-01-01');
+                $expectedHours = $refDate->copy()->setTimeFromTimeString($shift->start_time)
+                    ->diffInMinutes(
+                        $refDate->copy()->setTimeFromTimeString($shift->end_time)
+                            ->addDay($shift->isOvernightShift() ? 1 : 0)
+                    ) / 60;
+            } else {
+                $expectedHours = $shift?->hours_per_day ?? 8;
+            }
+
+            if ($hours > $expectedHours) {
+                $totalOvertimeMinutes += ($hours - $expectedHours) * 60;
+                $totalWorkHours += $expectedHours;
+            } else {
+                $totalWorkHours += $hours;
+            }
+        }
+        
+        $totals['total_work_hours'] = round($totalWorkHours, 2);
+        $totals['total_overtime_hours'] = round($totalOvertimeMinutes / 60, 2);
 
         $totalExpected = $totals['total_employees'] * count($days);
         $totals['attendance_percentage'] = $totalExpected > 0
@@ -125,6 +217,7 @@ class DailyEmployeeReportService
                 'id'              => $employee->id,
                 'name'            => $employee->name,
                 'department'      => $employee->department?->title ?? '-',
+                'project_code'    => '-',
                 'shift'           => $employee->shift?->name ?? '-',
                 'finger_print_id' => $employee->finger_print_id,
                 'date'            => $targetDate->format('Y-m-d'),
@@ -171,6 +264,8 @@ class DailyEmployeeReportService
                 $employeeData['check_in_time']    = $firstCheckIn?->time ?? null;
                 $employeeData['check_out_time']   = $lastCheckOut?->time ?? null;
                 $employeeData['attendance_count'] = $attendanceRecords->count();
+                // Project code recorded on the check-in fingerprint
+                $employeeData['project_code']     = $firstCheckIn?->project_code ?: '-';
 
                 if ($this->isLate($employee, $firstCheckIn, $targetDate)) {
                     $employeeData['late_minutes'] = $this->calculateLateMinutes($employee, $firstCheckIn, $targetDate);
@@ -287,14 +382,39 @@ class DailyEmployeeReportService
     }
     
     /**
-     * Get attendance records for employee on specific date
+     * Get attendance records for employee on specific work day.
+     *
+     * Overnight shifts: an exit punched after midnight (stored on the next
+     * calendar date) is re-attributed to this work day, and this day's own
+     * post-midnight exit is pulled from the next day's raw records.
      */
     private function getAttendanceRecords(Employee $employee, Carbon $date): Collection
     {
-        return Attendance::where('employee_id', $employee->id)
-            ->whereDate('date', $date->format('Y-m-d'))
+        $overnight = $employee->shift && $employee->shift->isOvernightShift();
+
+        // For overnight shifts fetch [D-1, D+1]:
+        //  - D+1 supplies this work day's own post-midnight exit (moves in),
+        //  - D-1 is the anchor that lets an exit stored on D move OUT to D-1
+        //    when it is really the previous night's shift end (no phantom row).
+        $fetchFrom = $overnight ? $date->copy()->subDay() : $date->copy();
+        $fetchTo   = $overnight ? $date->copy()->addDay() : $date->copy();
+
+        $records = Attendance::where('employee_id', $employee->id)
+            ->whereBetween('date', [
+                $fetchFrom->format('Y-m-d'),
+                $fetchTo->format('Y-m-d'),
+            ])
+            ->orderBy('date')
             ->orderBy('time')
             ->get();
+
+        if (! $overnight) {
+            return $records;
+        }
+
+        $byWorkday = OvernightAttendanceService::groupByWorkday($records, $employee->shift);
+
+        return $byWorkday[$date->format('Y-m-d')] ?? collect();
     }
     
     /**
@@ -327,8 +447,8 @@ class DailyEmployeeReportService
         
         $checkInTime = Carbon::parse($date->format('Y-m-d') . ' ' . $checkIn->time);
         $shiftStart = Carbon::parse($date->format('Y-m-d') . ' ' . $employee->shift->start_time);
-        
-        return (int) max(0, $shiftStart->diffInMinutes($checkInTime));
+
+        return (int) max(0, abs($shiftStart->diffInMinutes($checkInTime)));
     }
     
     /**
@@ -339,17 +459,23 @@ class DailyEmployeeReportService
         if (!$checkOut || !$employee->shift || !$employee->shift->end_time) {
             return false;
         }
-        
-        $checkOutTime = Carbon::parse($date->format('Y-m-d') . ' ' . $checkOut->time);
-        $shiftEnd = Carbon::parse($date->format('Y-m-d') . ' ' . $employee->shift->end_time);
-        
+
+        // For overnight shifts the shift end is on the next calendar day.
+        $checkOutDate = $date->copy();
+        if ($employee->shift->isOvernightShift()) {
+            $checkOutDate->addDay();
+        }
+
+        $checkOutTime = $checkOutDate->copy()->setTimeFromTimeString($checkOut->time);
+        $shiftEnd     = $employee->shift->getShiftEndDatetime($date);
+
         // Add allowed early leave minutes if configured
         $allowedEarlyLeaveMinutes = $employee->shift->allowed_early_leave_minutes ?? 0;
         $shiftEnd->subMinutes($allowedEarlyLeaveMinutes);
-        
+
         return $checkOutTime->lt($shiftEnd);
     }
-    
+
     /**
      * Calculate early departure minutes
      */
@@ -358,11 +484,17 @@ class DailyEmployeeReportService
         if (!$checkOut || !$employee->shift || !$employee->shift->end_time) {
             return 0;
         }
-        
-        $checkOutTime = Carbon::parse($date->format('Y-m-d') . ' ' . $checkOut->time);
-        $shiftEnd = Carbon::parse($date->format('Y-m-d') . ' ' . $employee->shift->end_time);
-        
-        return (int) max(0, $checkOutTime->diffInMinutes($shiftEnd));
+
+        // For overnight shifts the shift end is on the next calendar day.
+        $checkOutDate = $date->copy();
+        if ($employee->shift->isOvernightShift()) {
+            $checkOutDate->addDay();
+        }
+
+        $checkOutTime = $checkOutDate->copy()->setTimeFromTimeString($checkOut->time);
+        $shiftEnd     = $employee->shift->getShiftEndDatetime($date);
+
+        return (int) max(0, abs($checkOutTime->diffInMinutes($shiftEnd)));
     }
     
     /**

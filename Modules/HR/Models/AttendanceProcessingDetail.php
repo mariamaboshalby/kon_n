@@ -54,6 +54,7 @@ class AttendanceProcessingDetail extends Model
             'permission' => '<span class="badge bg-warning">إذن</span>',
             'late' => '<span class="badge bg-warning">متأخر</span>',
             'holiday' => '<span class="badge bg-secondary">إجازة أسبوعية</span>',
+            'day_off' => '<span class="badge bg-warning text-dark">يوم راحة</span>',
             default => '<span class="badge bg-secondary">غير محدد</span>'
         };
     }
@@ -62,7 +63,7 @@ class AttendanceProcessingDetail extends Model
     {
         $dayType = $this->getRawOriginal('day_type');
         if ($dayType == 'working_day') {
-            return '<span class="badge bg-primary">يوم عمل</span>';
+            return '<span class="badge bg-primary text-white">يوم عمل</span>';
         } elseif ($dayType == 'overtime_day') {
             return '<span class="badge bg-warning">يوم إضافي</span>';
         } elseif ($dayType == 'holiday') {

@@ -8,10 +8,14 @@ use Modules\HR\Models\Employee;
 use Modules\HR\Models\EmployeeLeaveBalance;
 use Modules\HR\Models\HRSetting;
 use Modules\HR\Models\LeaveRequest;
+use Modules\HR\Models\LeaveType;
 use Modules\HR\Models\Department;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class LeaveBalanceService
 {
@@ -354,5 +358,127 @@ class LeaveBalanceService
         $balance = $this->getOrCreateBalance($employeeId, $leaveTypeId, $year);
 
         return ! $balance->hasExceededMonthlyLimit($month, $days);
+    }
+
+    /**
+     * @param  array{search?: string|null, employee_id?: string|int|null, leave_type_id?: string|int|null, year?: string|int|null}  $filters
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function listBalances(array $filters = []): Collection
+    {
+        $search = trim((string) ($filters['search'] ?? ''));
+        $employeeId = $filters['employee_id'] ?? null;
+        $leaveTypeId = $filters['leave_type_id'] ?? null;
+        $year = $filters['year'] ?? null;
+
+        $balances = EmployeeLeaveBalance::query()
+            ->with(['employee:id,name', 'leaveType:id,name'])
+            ->when($search !== '', function ($query) use ($search) {
+                $query->whereHas('employee', function ($q) use ($search) {
+                    $q->where('name', 'like', '%'.$search.'%');
+                });
+            })
+            ->when($employeeId, fn ($q) => $q->where('employee_id', $employeeId))
+            ->when($leaveTypeId, fn ($q) => $q->where('leave_type_id', $leaveTypeId))
+            ->when($year, fn ($q) => $q->where('year', $year))
+            ->orderByDesc('year')
+            ->orderBy('employee_id')
+            ->get();
+
+        return $balances->map(fn (EmployeeLeaveBalance $balance) => $this->serializeBalance($balance))->values();
+    }
+
+    /**
+     * @return EloquentCollection<int, Employee>
+     */
+    public function employeesForSelect(): EloquentCollection
+    {
+        return Employee::query()->orderBy('name')->get(['id', 'name']);
+    }
+
+    /**
+     * @return EloquentCollection<int, LeaveType>
+     */
+    public function leaveTypesForSelect(): EloquentCollection
+    {
+        return LeaveType::query()->orderBy('name')->get(['id', 'name']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function createBalance(array $data): EmployeeLeaveBalance
+    {
+        $this->assertBalanceRules($data);
+
+        return EmployeeLeaveBalance::create($data);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function updateBalance(EmployeeLeaveBalance $balance, array $data): EmployeeLeaveBalance
+    {
+        $this->assertBalanceRules($data, $balance->id);
+        $balance->update($data);
+
+        return $balance->fresh(['employee', 'leaveType']) ?? $balance;
+    }
+
+    public function deleteBalance(EmployeeLeaveBalance $balance): void
+    {
+        $balance->delete();
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function assertBalanceRules(array $data, ?int $ignoreId = null): void
+    {
+        $maxMonthly = (float) ($data['max_monthly_days'] ?? 0);
+        $opening = (float) ($data['opening_balance_days'] ?? 0);
+
+        if ($maxMonthly > $opening) {
+            throw ValidationException::withMessages([
+                'max_monthly_days' => [__('hr::hr.max_monthly_days_exceeds_opening_balance', [
+                    'max_monthly' => number_format($maxMonthly, 1),
+                    'opening_balance' => number_format($opening, 1),
+                ])],
+            ]);
+        }
+
+        $exists = EmployeeLeaveBalance::query()
+            ->where('employee_id', $data['employee_id'])
+            ->where('leave_type_id', $data['leave_type_id'])
+            ->where('year', $data['year'])
+            ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->exists();
+
+        if ($exists) {
+            throw ValidationException::withMessages([
+                'general' => [__('hr::hr.duplicate_leave_balance')],
+            ]);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeBalance(EmployeeLeaveBalance $balance): array
+    {
+        return [
+            'id' => $balance->id,
+            'employee_id' => $balance->employee_id,
+            'leave_type_id' => $balance->leave_type_id,
+            'employee_name' => $balance->employee?->name ?? '',
+            'leave_type_name' => $balance->leaveType?->name ?? '',
+            'year' => $balance->year,
+            'opening_balance_days' => (float) $balance->opening_balance_days,
+            'used_days' => (float) $balance->used_days,
+            'pending_days' => (float) $balance->pending_days,
+            'max_monthly_days' => $balance->max_monthly_days !== null ? (float) $balance->max_monthly_days : null,
+            'remaining_days' => (float) $balance->remaining_days,
+            'notes' => $balance->notes,
+        ];
     }
 }

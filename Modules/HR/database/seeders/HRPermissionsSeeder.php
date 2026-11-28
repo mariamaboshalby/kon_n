@@ -27,6 +27,8 @@ class HRPermissionsSeeder extends Seeder
                 'Employees',
                 'KPIs',
                 'Employee Evaluations',
+                'Instant Evaluations',
+                'Instant Evaluation Items',
                 'Contracts',
                 'Contract Types',
                 'Attendances',
@@ -61,6 +63,19 @@ class HRPermissionsSeeder extends Seeder
                 'Employee Deduction Rejections',
                 'Employee Reward Rejections',
                 'Mobile-fingerprint',
+                // بوابة الموظف (تطبيق الموبايل)
+                'Employee Portal',
+                'Employee Devices',
+                'Portal Requests',
+                // Recruitment (merged into HR)
+                'Recruitment Dashboard',
+                'Job Postings',
+                'Interviews',
+                'Interview Schedule',
+                'Onboardings',
+                'Terminations',
+                'Recruitment Statistics',
+                'Applicants',
             ],
         ];
 

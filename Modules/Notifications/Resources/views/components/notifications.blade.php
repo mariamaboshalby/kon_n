@@ -142,11 +142,9 @@
         const userId = metaEl ? metaEl.getAttribute('content') : null;
 
         if (!userId) {
-            console.error('User ID meta tag not found.');
             return;
         }
         if (!window.Echo) {
-            console.error('Laravel Echo is not initialized.');
             return;
         }
 

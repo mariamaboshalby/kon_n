@@ -14,7 +14,7 @@ class WorkPermission extends Model
     protected $guarded = ['id'];
     protected $table = 'work_permissions';
     protected $casts = [
-        'date' => 'date',
+        'date' => 'date:Y-m-d',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'approved_at' => 'datetime',

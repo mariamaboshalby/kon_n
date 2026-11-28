@@ -22,11 +22,28 @@ class Employee extends Model implements HasMedia
         'date_of_hire' => 'date',
         'date_of_joining' => 'date',
         'date_of_fire' => 'date',
+        'national_id_start' => 'date',
+        'national_id_expiry' => 'date',
+        'residence_start' => 'date',
+        'residence_expiry' => 'date',
+        'license_start' => 'date',
+        'license_expiry' => 'date',
         'password' => 'hashed',
-        'is_errand_allowed' => 'boolean',
+        'is_errand_allowed'  => 'boolean',
+        'require_location'   => 'boolean',
+        'allow_remote_work'  => 'boolean',
+        'portal_enabled'     => 'boolean',
+        'portal_password_changed_at' => 'datetime',
+        'exchange_rate'      => 'decimal:8',
+        'currency_salary'    => 'decimal:2',
     ];
 
     protected $guarded = ['id'];
+
+    public function currency(): BelongsTo
+    {
+        return $this->belongsTo(\Modules\Settings\Models\Currency::class, 'currency_id');
+    }
 
     // عهد عمل
     public function covenants(): HasMany
@@ -262,6 +279,20 @@ class Employee extends Model implements HasMedia
             ->useFallbackPath(public_path('assets/images/avatar-placeholder.svg'));
     }
 
+    /**
+     * Localized display name:
+     * - Arabic locale -> Arabic name
+     * - Other locales (English...) -> English name when available, otherwise Arabic name
+     */
+    public function getDisplayNameAttribute(): ?string
+    {
+        if (app()->getLocale() !== 'ar' && filled($this->name_en)) {
+            return $this->name_en;
+        }
+
+        return $this->name;
+    }
+
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);
@@ -315,6 +346,11 @@ class Employee extends Model implements HasMedia
     public function evaluations(): HasMany
     {
         return $this->hasMany(Employee_Evaluation::class);
+    }
+
+    public function instantEvaluations(): HasMany
+    {
+        return $this->hasMany(EmployeeInstantEvaluation::class);
     }
 
     public function employeeProductions(): HasMany
@@ -511,14 +547,24 @@ class Employee extends Model implements HasMedia
         return $this->belongsTo(self::class, 'line_manager_id');
     }
 
+    public function subordinates(): HasMany
+    {
+        return $this->hasMany(self::class, 'line_manager_id');
+    }
+
+    public function portalDevices(): HasMany
+    {
+        return $this->hasMany(EmployeeDevice::class);
+    }
+
     public function terminations(): HasMany
     {
-        return $this->hasMany(\Modules\Recruitment\Models\Termination::class);
+        return $this->hasMany(\Modules\HR\Models\Termination::class);
     }
 
     public function latestContract(): BelongsTo
     {
-        return $this->belongsTo(\Modules\Recruitment\Models\Contract::class, 'id', 'employee_id')
+        return $this->belongsTo(\Modules\HR\Models\Contract::class, 'id', 'employee_id')
             ->latestOfMany();
     }
 
@@ -538,5 +584,15 @@ class Employee extends Model implements HasMedia
         }
 
         return \Modules\Progress\Models\ProjectProgress::where('account_id', $accountId);
+    }
+
+    public function projectsAssigned(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(
+            \Modules\Projects\Models\Project::class,
+            'employee_project',
+            'employee_id',
+            'project_id'
+        )->withTimestamps();
     }
 }

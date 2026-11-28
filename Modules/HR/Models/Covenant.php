@@ -37,25 +37,67 @@ class Covenant extends Model implements HasMedia
         $this->addMediaCollection('HR_Covenants')
             ->useDisk('public')
             ->singleFile();
+
+        $this->addMediaCollection('HR_Covenant_Acknowledgment')
+            ->useDisk('public')
+            ->singleFile();
+
+        $this->addMediaCollection('HR_Covenant_Discharge')
+            ->useDisk('public')
+            ->singleFile();
+    }
+
+    /**
+     * Map of short media keys to their Spatie collection names.
+     */
+    private const MEDIA_COLLECTIONS = [
+        'image' => 'HR_Covenants',
+        'acknowledgment' => 'HR_Covenant_Acknowledgment',
+        'discharge' => 'HR_Covenant_Discharge',
+    ];
+
+    /**
+     * Resolve the display URL for a covenant media collection.
+     * Served through a controller route (reads the file via Spatie's absolute
+     * path) so it works for per-tenant storage where the static /storage
+     * symlink points at the central folder instead of the tenant folder.
+     */
+    private function collectionUrl(string $key): ?string
+    {
+        $collection = self::MEDIA_COLLECTIONS[$key] ?? null;
+
+        if (! $collection || ! $this->exists) {
+            return null;
+        }
+
+        if (! $this->getFirstMedia($collection)) {
+            return null;
+        }
+
+        return route('covenants.media', ['covenant' => $this->id, 'collection' => $key]);
     }
 
     /**
      * Get the covenant's image URL or null if no image exists
-     * Works correctly in both local (Laragon) and production environments
-     * Uses asset() helper to ensure correct URL generation
      */
     public function getImageUrlAttribute(): ?string
     {
-        $media = $this->getFirstMedia('HR_Covenants');
+        return $this->collectionUrl('image');
+    }
 
-        // If no media exists, return null (no fallback for covenants)
-        if (!$media) {
-            return null;
-        }
+    /**
+     * صورة إقرار الاستلام
+     */
+    public function getAcknowledgmentUrlAttribute(): ?string
+    {
+        return $this->collectionUrl('acknowledgment');
+    }
 
-        // Build URL using asset() helper with the correct path
-        // Path format: storage/{id}/{filename}
-        // This works correctly with the symlink created by php artisan storage:link
-        return asset('storage/'.$media->id.'/'.$media->file_name);
+    /**
+     * صورة إبراء الذمة
+     */
+    public function getDischargeUrlAttribute(): ?string
+    {
+        return $this->collectionUrl('discharge');
     }
 }

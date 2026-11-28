@@ -51,7 +51,11 @@ class Attendance extends Model
         }
 
         // Invalidate cache for the month containing this attendance date
-        $date = \Carbon\Carbon::parse($attendance->date);
+        // Use the local date directly — Carbon::parse() on the cast Carbon instance
+        // can shift the day (UTC serialization) and invalidate the wrong month cache.
+        $date = $attendance->date instanceof \Carbon\Date
+            ? $attendance->date->copy()
+            : \Carbon\Carbon::parse($attendance->date);
         $startDate = $date->copy()->startOfMonth();
         $endDate = $date->copy()->endOfMonth();
 

@@ -22,9 +22,10 @@ class MonthlyActivityReportController extends Controller
         $dateFrom     = $request->input('date_from', now()->startOfMonth()->format('Y-m-d'));
         $dateTo       = $request->input('date_to',   now()->format('Y-m-d'));
         $departmentId = $request->input('department_id') ? (int) $request->input('department_id') : null;
+        $searchName   = $request->input('search_name', '');
 
         $departments = Department::orderBy('title')->get();
-        $reportData  = $service->generate($dateFrom, $dateTo, $departmentId);
+        $reportData  = $service->generate($dateFrom, $dateTo, $departmentId, $searchName);
 
         return view('hr::hr-management.attendances.reports.monthly-activity-report', compact(
             'reportData',
@@ -32,6 +33,7 @@ class MonthlyActivityReportController extends Controller
             'dateFrom',
             'dateTo',
             'departmentId',
+            'searchName'
         ));
     }
 }

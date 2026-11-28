@@ -14,6 +14,9 @@ class CreateCitiesTable extends Migration
             $table->string('title');
             $table->foreignId('state_id')->constrained('states')->onDelete('cascade');
             $table->timestamps();
+            $table->decimal('latitude', 10, 7)->nullable();
+            $table->decimal('longitude', 10, 7)->nullable();
+        
         });
     }
     public function down()

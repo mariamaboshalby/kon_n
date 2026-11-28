@@ -1,0 +1,385 @@
+#hrWeekBoard {
+    --hr-week-name-width: 190px;
+    --hr-week-border: var(--masar-border, #dbe4ee);
+    --hr-week-surface: var(--masar-card, #fff);
+    --hr-week-muted: var(--masar-text-muted, #64748b);
+    --hr-week-primary: var(--masar-primary, #2e7d32);
+    min-width: 0;
+    color: var(--masar-text, #1f2937);
+    font-size: 14px;
+}
+
+#hrWeekBoard .hr-week-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--hr-week-border);
+    border-radius: 12px;
+    background: var(--hr-week-surface);
+}
+
+#hrWeekBoard .hr-week-nav,
+#hrWeekBoard .hr-week-settings {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+#hrWeekBoard .hr-week-range {
+    min-width: 180px;
+    text-align: center;
+    font-size: 15px;
+}
+
+#hrWeekBoard .hr-week-settings label {
+    margin: 0;
+    color: var(--hr-week-muted);
+    font-size: 12px;
+}
+
+#hrWeekBoard .hr-week-settings .form-select {
+    width: auto;
+    min-width: 94px;
+}
+
+#hrWeekBoard .hr-week-layout {
+    display: grid;
+    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+    align-items: start;
+    gap: 16px;
+    direction: rtl;
+}
+
+#hrWeekBoard .hr-week-pool {
+    position: sticky;
+    top: 12px;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--hr-week-border);
+    border-radius: 12px;
+    background: var(--hr-week-surface);
+}
+
+#hrWeekBoard .hr-week-pool .card-header {
+    border-bottom: 1px solid var(--hr-week-border);
+    background: color-mix(in srgb, var(--hr-week-primary) 8%, var(--hr-week-surface));
+    color: var(--masar-text, #1f2937);
+    font-size: 14px;
+}
+
+#hrWeekBoard .hr-week-pool-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: min(62vh, 640px);
+    overflow-y: auto;
+    padding-inline-end: 2px;
+}
+
+#hrWeekBoard .hr-week-person {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--hr-week-border);
+    border-inline-start: 4px solid var(--hr-emp, var(--hr-week-primary));
+    border-radius: 8px;
+    background: var(--hr-week-surface);
+    cursor: grab;
+    transition: background-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+#hrWeekBoard .hr-week-person:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(15, 23, 42, .08);
+}
+
+#hrWeekBoard .hr-week-person:active {
+    cursor: grabbing;
+}
+
+#hrWeekBoard .hr-week-person.is-selected {
+    background: color-mix(in srgb, var(--hr-emp, var(--hr-week-primary)) 10%, var(--hr-week-surface));
+    box-shadow: inset 0 0 0 1px var(--hr-emp, var(--hr-week-primary));
+}
+
+#hrWeekBoard .hr-week-person strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#hrWeekBoard .hr-week-person small {
+    color: var(--hr-week-muted);
+}
+
+#hrWeekBoard .hr-week-cal {
+    min-width: 0;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    overscroll-behavior-x: contain;
+}
+
+#hrWeekBoard .hr-week-axis,
+#hrWeekBoard .hr-week-days {
+    min-width: 760px;
+}
+
+#hrWeekBoard .hr-week-axis {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: var(--hr-week-name-width) minmax(0, 1fr);
+    min-height: 34px;
+    border: 1px solid var(--hr-week-border);
+    border-radius: 9px 9px 0 0;
+    background: var(--hr-week-surface);
+}
+
+#hrWeekBoard .hr-week-axis > div:not(.hr-week-axis-hours) {
+    display: none;
+}
+
+#hrWeekBoard .hr-week-axis-hours {
+    grid-column: 2;
+    display: grid;
+    grid-template-columns: repeat(var(--hr-hours, 24), minmax(0, 1fr));
+    direction: rtl;
+}
+
+#hrWeekBoard .hr-week-axis-hours span {
+    padding: 7px 2px;
+    border-inline-start: 1px solid var(--hr-week-border);
+    color: var(--hr-week-muted);
+    font-size: 11px;
+    line-height: 1;
+    text-align: center;
+}
+
+#hrWeekBoard .hr-week-day {
+    margin-bottom: 10px;
+    overflow: hidden;
+    border: 1px solid var(--hr-week-border);
+    border-radius: 10px;
+    background: var(--hr-week-surface);
+}
+
+#hrWeekBoard .hr-week-day.is-today {
+    border-color: color-mix(in srgb, var(--hr-week-primary) 55%, var(--hr-week-border));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--hr-week-primary) 10%, transparent);
+}
+
+#hrWeekBoard .hr-week-day-name {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 38px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--hr-week-border);
+    background: color-mix(in srgb, var(--hr-week-primary) 7%, var(--hr-week-surface));
+    font-size: 14px;
+}
+
+#hrWeekBoard .hr-week-day-name small {
+    color: var(--hr-week-muted);
+    font-size: 12px;
+}
+
+#hrWeekBoard .hr-week-lane {
+    display: grid;
+    grid-template-columns: var(--hr-week-name-width) minmax(0, 1fr);
+    min-height: 50px;
+    border-bottom: 1px solid var(--hr-week-border);
+}
+
+#hrWeekBoard .hr-week-lane:last-child {
+    border-bottom: 0;
+}
+
+#hrWeekBoard .hr-week-lane.is-selected .hr-week-lane-name {
+    background: color-mix(in srgb, var(--hr-emp, var(--hr-week-primary)) 10%, var(--hr-week-surface));
+}
+
+#hrWeekBoard .hr-week-lane-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 6px 10px;
+    border-inline-start: 3px solid var(--hr-emp, transparent);
+    background: color-mix(in srgb, var(--hr-week-muted) 4%, var(--hr-week-surface));
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#hrWeekBoard .hr-week-lane-name > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#hrWeekBoard .hr-week-swatch {
+    flex: 0 0 9px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--hr-emp, var(--hr-week-primary));
+}
+
+#hrWeekBoard .hr-week-track {
+    position: relative;
+    min-width: 0;
+    min-height: 50px;
+    overflow: hidden;
+    background: var(--hr-week-surface);
+    touch-action: pan-y;
+}
+
+#hrWeekBoard .hr-week-cells {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(var(--hr-hours, 24), minmax(0, 1fr));
+    direction: rtl;
+    pointer-events: none;
+}
+
+#hrWeekBoard .hr-week-cell {
+    border-inline-start: 1px solid color-mix(in srgb, var(--hr-week-border) 78%, transparent);
+}
+
+#hrWeekBoard .hr-week-cell:nth-child(odd) {
+    background: color-mix(in srgb, var(--hr-week-muted) 2%, transparent);
+}
+
+#hrWeekBoard .hr-week-block {
+    position: absolute;
+    top: 5px;
+    bottom: 5px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    overflow: hidden;
+    border: 1px solid var(--hr-emp, var(--hr-week-primary));
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--hr-emp, var(--hr-week-primary)) 20%, var(--hr-week-surface));
+    color: var(--masar-text, #1f2937);
+    cursor: grab;
+    user-select: none;
+}
+
+#hrWeekBoard .hr-week-block:active,
+#hrWeekBoard .hr-week-block.is-dragging {
+    cursor: grabbing;
+}
+
+#hrWeekBoard .hr-week-block-label {
+    overflow: hidden;
+    padding: 0 5px;
+    font-size: 11px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+#hrWeekBoard .hr-week-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 3;
+    width: 7px;
+    cursor: ew-resize;
+}
+
+#hrWeekBoard .hr-week-handle[data-edge="start"] {
+    right: 0;
+}
+
+#hrWeekBoard .hr-week-handle[data-edge="end"] {
+    left: 0;
+}
+
+#hrWeekBoard .hr-week-block.is-draft {
+    z-index: 4;
+    border-style: dashed;
+    background: color-mix(in srgb, var(--hr-emp, var(--hr-week-primary)) 28%, var(--hr-week-surface));
+    pointer-events: none;
+}
+
+#hrWeekBoard .hr-week-block.is-copy {
+    border-style: dashed;
+}
+
+#hrWeekBoard .hr-week-drop-hint {
+    padding: 14px;
+    color: var(--hr-week-muted);
+    font-size: 13px;
+    text-align: center;
+}
+
+#hrWeekBoard.is-busy {
+    cursor: progress;
+}
+
+#hrWeekBoard.is-busy .hr-week-layout {
+    opacity: .7;
+    pointer-events: none;
+}
+
+@media (max-width: 1100px) {
+    #hrWeekBoard .hr-week-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    #hrWeekBoard .hr-week-pool {
+        position: static;
+    }
+
+    #hrWeekBoard .hr-week-pool-list {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        max-height: 150px;
+    }
+
+    #hrWeekBoard .hr-week-person {
+        flex: 1 1 180px;
+    }
+}
+
+@media (max-width: 640px) {
+    #hrWeekBoard .hr-week-toolbar {
+        align-items: stretch;
+        padding: 9px;
+    }
+
+    #hrWeekBoard .hr-week-nav,
+    #hrWeekBoard .hr-week-settings {
+        width: 100%;
+    }
+
+    #hrWeekBoard .hr-week-nav > *,
+    #hrWeekBoard .hr-week-settings > * {
+        flex: 1 1 auto;
+    }
+
+    #hrWeekBoard .hr-week-range {
+        order: -1;
+        width: 100%;
+    }
+
+    #hrWeekBoard .hr-week-axis,
+    #hrWeekBoard .hr-week-days {
+        min-width: 720px;
+    }
+}

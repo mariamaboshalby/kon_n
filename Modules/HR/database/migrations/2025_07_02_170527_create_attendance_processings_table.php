@@ -26,7 +26,6 @@ return new class extends Migration
             $table->integer('actual_work_days')->default(0);
             $table->decimal('actual_work_hours', 10, 2)->default(0);
             $table->integer('overtime_work_days')->default(0);
-            $table->decimal('overtime_work_hours', 10, 2)->default(0);
             $table->integer('absent_days')->default(0);
             $table->decimal('employee_productivity_salary', 10, 2)->default(0);
             $table->decimal('salary_due', 15, 2)->default(0);
@@ -34,9 +33,18 @@ return new class extends Migration
             $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
             $table->text('notes')->nullable();
             $table->timestamps();
-            
-            // Add unique constraint to prevent duplicate processing for same employee and period
             $table->unique(['employee_id', 'type', 'period_start', 'period_end'], 'unique_employee_processing_period');
+            $table->decimal('unpaid_leave_days', 10, 2)->default(0);
+            $table->integer('overtime_work_minutes')->default(0);
+            $table->integer('total_late_minutes')->default(0);
+            $table->index(['employee_id', 'period_start', 'period_end'], 'idx_employee_period');
+            $table->index(['type', 'status'], 'idx_type_status');
+            $table->index(['department_id', 'period_start', 'period_end'], 'idx_department_period');
+        
+        
+
+        
+        
         });
     }
 

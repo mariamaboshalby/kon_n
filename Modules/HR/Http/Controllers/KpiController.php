@@ -1,78 +1,90 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Modules\HR\Http\Controllers;
 
-use Modules\HR\Models\Kpi;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
-
-
+use Illuminate\View\View;
+use Modules\HR\Models\Kpi;
+use Modules\HR\Services\EmployeeEvaluationService;
+use Modules\HR\Services\KpiService;
 
 class KpiController extends Controller
 {
-    public function __construct()
-    {
-        $this->middleware('can:view KPIs')->only(['index']);
-        $this->middleware('can:create KPIs')->only(['create', 'store']);
-        $this->middleware('can:edit KPIs')->only(['update', 'edit']);
+    public function __construct(
+        private readonly KpiService $kpiService,
+        private readonly EmployeeEvaluationService $evaluationService
+    ) {
+        $this->middleware('can:view KPIs')->only(['index', 'data']);
+        $this->middleware('can:create KPIs')->only(['store']);
+        $this->middleware('can:edit KPIs')->only(['update']);
         $this->middleware('can:delete KPIs')->only(['destroy']);
+        $this->middleware('can:view Employee Evaluations')->only(['employeeEvaluation']);
     }
 
-    public function index()
+    public function index(): View
     {
         return view('hr::hr-management.kpis.manage-kpi');
     }
 
-    public function employeeEvaluation()
+    public function employeeEvaluation(): View
     {
-        return view('hr::hr-management.kpis.manage-employee-evaluation');
+        return view('hr::hr-management.kpis.manage-employee-evaluation', [
+            'employees' => $this->evaluationService->employeesForSelect(),
+        ]);
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function data(Request $request): JsonResponse
     {
-        //
+        return response()->json([
+            'data' => $this->kpiService->list(
+                $request->string('search')->toString() ?: null,
+                $request->string('date_from')->toString() ?: null,
+                $request->string('date_to')->toString()   ?: null,
+            ),
+        ]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
+    public function store(Request $request): JsonResponse
     {
-        //
+        $validated = $request->validate([
+            'name' => 'required|string|min:3|max:255',
+            'description' => 'nullable|string|max:1000',
+        ]);
+
+        $this->kpiService->create($validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => __('hr::hr.kpi_created_successfully'),
+        ]);
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Kpi $kpi)
+    public function update(Request $request, Kpi $kpi): JsonResponse
     {
-        //
+        $validated = $request->validate([
+            'name' => 'required|string|min:3|max:255',
+            'description' => 'nullable|string|max:1000',
+        ]);
+
+        $this->kpiService->update($kpi, $validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => __('hr::hr.kpi_updated_successfully'),
+        ]);
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Kpi $kpi)
+    public function destroy(Kpi $kpi): JsonResponse
     {
-        //
-    }
+        $this->kpiService->delete($kpi);
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Kpi $kpi)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Kpi $kpi)
-    {
-        //
+        return response()->json([
+            'success' => true,
+            'message' => __('hr::hr.kpi_deleted_successfully'),
+        ]);
     }
 }

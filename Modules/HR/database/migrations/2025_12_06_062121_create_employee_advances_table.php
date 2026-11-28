@@ -25,10 +25,12 @@ return new class extends Migration
             $table->foreignId('approved_by')->nullable()->constrained('users')->onDelete('set null');
             $table->timestamp('approved_at')->nullable();
             $table->timestamps();
-
             $table->index('employee_id');
             $table->index('date');
             $table->index('status');
+            $table->boolean('deducted_from_salary')->default(false);
+            $table->unsignedBigInteger('deduction_journal_id')->nullable();
+        
         });
     }
 

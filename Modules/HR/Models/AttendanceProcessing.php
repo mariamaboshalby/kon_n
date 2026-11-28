@@ -115,7 +115,7 @@ class AttendanceProcessing extends Model
     public function getPresentDaysAttribute(): int
     {
         return $this->attendanceProcessingDetails()
-            ->where('attendance_status', 'present')
+            ->whereIn('attendance_status', ['present', 'day_off'])
             ->count();
     }
 

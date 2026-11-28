@@ -4,7 +4,10 @@ namespace Modules\HR\Http\Controllers;
 
 use Modules\HR\Models\Attendance;
 use Modules\HR\Models\Employee;
-use Modules\Projects\Models\Project;
+use Modules\HR\Models\HRSetting;
+use Modules\HR\Services\Portal\PortalAttendanceService;
+use Modules\HR\Services\Portal\PortalException;
+use Modules\Progress\Models\ProjectProgress as Project;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
@@ -16,6 +19,36 @@ use Illuminate\Routing\Controller;
 
 class MobileAttendanceController extends Controller
 {
+    /**
+     * عرض صفحة البصمة مع بيانات الموظف وإعدادات الموقع
+     */
+    public function showAttendancePage()
+    {
+        $employeeId = Session::get('employee_id');
+
+        $locationConfig = [
+            'require_location' => false,
+            'location_type'    => null,
+            'company_location' => null,
+        ];
+
+        if ($employeeId) {
+            $employee = Employee::find($employeeId);
+
+            if ($employee) {
+                $locationConfig['require_location'] = (bool) $employee->require_location;
+                $locationConfig['location_type']    = $employee->location_type;
+
+                // إحداثيات الشركة — فقط إذا نوع الموقع = company
+                if ($employee->require_location && $employee->location_type === 'company') {
+                    $locationConfig['company_location'] = HRSetting::getCompanyLocation();
+                }
+            }
+        }
+
+        return view('hr::mobile.attendance', compact('locationConfig'));
+    }
+
     /**
      * تسجيل بصمة جديدة من الموبايل
      */
@@ -62,10 +95,14 @@ class MobileAttendanceController extends Controller
             }
 
             // التحقق من كود المشروع إذا تم إدخاله
-            $projectCode = $request->project_code;
-            if (!empty($projectCode)) {
-                $project = Project::where('project_code', $projectCode)
-                    ->orWhere('name', $projectCode)
+            $projectCode = trim((string) $request->project_code);
+            if ($projectCode !== '') {
+                // قبول مشاريع وحدة المشاريع (is_progress=0) ومشاريع لوحة Progress معًا
+                $project = Project::withoutGlobalScope('progressOnly')
+                    ->where(function ($q) use ($projectCode) {
+                        $q->where('project_code', $projectCode)
+                            ->orWhere('name', $projectCode);
+                    })
                     ->first();
 
                 if (!$project) {
@@ -83,8 +120,15 @@ class MobileAttendanceController extends Controller
 
             // استخدام وقت السيرفر بدلاً من وقت الجهاز
             $serverTime = Carbon::now(config('app.timezone'));
-            $serverDate = $serverTime->format('Y-m-d');
             $serverTimeFormatted = $serverTime->format('H:i');
+
+            // انصراف بعد منتصف الليل (وقته أصغر من وقت آخر حضور) يتسجل
+            // بتاريخ يوم الشغل — اليوم السابق — مش تاريخ التقويم
+            $attendanceDate = app(PortalAttendanceService::class)
+                ->workdayDateFor($employee, $serverTime, $request->type);
+
+            // تسجيل الموقع إن وُجد دون مقارنته أو إلزام نطاق معين
+
 
             // تحويل location من JSON string إلى array
             $locationData = null;
@@ -117,7 +161,7 @@ class MobileAttendanceController extends Controller
                 'employee_attendance_finger_print_id' => $fingerPrintId,
                 'employee_attendance_finger_print_name' => $fingerPrintName,
                 'type' => $request->type,
-                'date' => $serverDate,
+                'date' => $attendanceDate,
                 'time' => $serverTimeFormatted,
                 'location' => $locationData,
                 'status' => 'pending',
@@ -134,7 +178,21 @@ class MobileAttendanceController extends Controller
                 throw $dbException;
             }
 
-            $attendance = Attendance::create($attendanceData);
+            // فرض تسلسل حضور/انصراف من السيرفر (نفس قاعدة بوابة الموظف) + منع التكرار المتزامن
+            try {
+                $attendance = DB::transaction(function () use ($employee, $request, $serverTime, $attendanceData) {
+                    Employee::query()->whereKey($employee->id)->lockForUpdate()->first(['id']);
+                    app(PortalAttendanceService::class)->assertSequence($employee, $request->type, $serverTime);
+
+                    return Attendance::create($attendanceData);
+                });
+            } catch (PortalException $sequenceException) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $sequenceException->getMessage(),
+                    'error_type' => $sequenceException->errorType(),
+                ], $sequenceException->status());
+            }
 
             // إرجاع النتيجة
             return response()->json([
@@ -359,16 +417,22 @@ class MobileAttendanceController extends Controller
 
             if ($lastAttendance) {
                 $lastType = $lastAttendance->type;
-                
-                // إذا كان آخر نوع هو نفس النوع المطلوب
-                if ($lastType === $type) {
+
+                // منطق الشفتات:
+                // - لا يجوز دخولان متتاليان بدون خروج بينهما
+                // - لا يجوز خروج إذا لم يكن هناك دخول قبله
+                // - يُسمح بالدخول بعد الخروج (شفت جديد أو انتقال موقع)
+                if ($lastType === 'check_in' && $type === 'check_in') {
                     $canRecord = false;
-                    $message = $type === 'check_in' 
-                        ? 'تم تسجيل دخول اليوم بالفعل' 
-                        : 'تم تسجيل خروج اليوم بالفعل';
+                    $message = 'يجب تسجيل خروج أولاً قبل تسجيل دخول جديد';
+                } elseif ($lastType === 'check_out' && $type === 'check_out') {
+                    $canRecord = false;
+                    $message = 'يجب تسجيل دخول أولاً قبل تسجيل خروج جديد';
                 }
+                // check_in بعد check_out → مسموح (شفت جديد)
+                // check_out بعد check_in → مسموح (نهاية الشفت)
             } else {
-                // إذا لم توجد بصمات اليوم وكان النوع خروج
+                // لا توجد بصمات اليوم: لا يجوز البدء بخروج
                 if ($type === 'check_out') {
                     $canRecord = false;
                     $message = 'يجب تسجيل دخول أولاً';
@@ -396,5 +460,25 @@ class MobileAttendanceController extends Controller
                 'message' => 'حدث خطأ في التحقق من إمكانية تسجيل البصمة'
             ], 500);
         }
+    }
+
+    /**
+     * حساب المسافة بين نقطتين جغرافيتين بالمتر (Haversine formula)
+     */
+    private function haversineDistance(
+        float $lat1, float $lng1,
+        float $lat2, float $lng2
+    ): float {
+        $earthRadius = 6371000; // بالمتر
+
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+
+        $a = sin($dLat / 2) ** 2
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
+        return $earthRadius * $c;
     }
 }

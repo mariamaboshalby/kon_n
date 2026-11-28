@@ -65,6 +65,15 @@
     </li>
 @endcan
 
+{{-- جدول توزيع الورديات الأسبوعي --}}
+@can('view Shifts')
+    <li class="nav-item">
+        <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('shifts.weekly.index') }}">
+            <i class="las la-calendar-week"></i>{{ __('hr::hr.weekly_shift_board') }}
+        </a>
+    </li>
+@endcan
+
 {{-- قسم إدارة الموظفين --}}
 @can('view Employees')
     <li class="nav-item">
@@ -201,6 +210,101 @@
                 <li class="nav-item">
                     <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('hr.leaves.requests.create') }}">
                         <i class="las la-plus-circle"></i>{{ __('navigation.create_leave_request') }}
+                    </a>
+                </li>
+            @endcan
+        </ul>
+    </li>
+@endcanany
+
+{{-- قسم إدارة التوظيف --}}
+@canany([
+    'view Recruitment Dashboard',
+    'view Contract Types',
+    'view Job Postings',
+    'view Applicants',
+    'view CVs',
+    'view Interviews',
+    'view Contracts',
+    'view Onboardings',
+    'view Terminations',
+])
+    <li class="nav-item has-submenu">
+        <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="javascript: void(0);">
+            <i class="las la-user-tie"></i>{{ __('recruitment.recruitment_management') }}
+            <span class="menu-arrow"><i class="mdi mdi-chevron-right"></i></span>
+        </a>
+        <ul class="sub-menu mm-collapse">
+            @can('view Recruitment Dashboard')
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('recruitment.dashboard') }}">
+                        <i class="las la-chart-pie"></i>{{ __('recruitment.recruitment_dashboard') }}
+                    </a>
+                </li>
+            @endcan
+            @can('view Contract Types')
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('recruitment.contract-types.index') }}">
+                        <i class="las la-file-signature"></i>{{ __('recruitment.contract_types') }}
+                    </a>
+                </li>
+            @endcan
+            @can('view Job Postings')
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('recruitment.job-postings.index') }}">
+                        <i class="las la-bullhorn"></i>{{ __('recruitment.job_postings') }}
+                    </a>
+                </li>
+            @endcan
+            @can('view Applicants')
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('recruitment.applicants.index') }}">
+                        <i class="las la-user-plus"></i>{{ __('recruitment.applicants') }}
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('recruitment.job-applicants.index') }}">
+                        <i class="las la-users"></i>{{ __('recruitment.job_applicants') }}
+                    </a>
+                </li>
+            @endcan
+            @can('view CVs')
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('recruitment.cvs.index') }}">
+                        <i class="las la-file-alt"></i>{{ __('recruitment.cvs') }}
+                    </a>
+                </li>
+            @endcan
+            @can('view Interviews')
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('recruitment.interviews.index') }}">
+                        <i class="las la-comments"></i>{{ __('recruitment.interviews') }}
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('recruitment.interviews.calendar') }}">
+                        <i class="las la-calendar"></i>{{ __('recruitment.interview_calendar') }}
+                    </a>
+                </li>
+            @endcan
+            @can('view Contracts')
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('recruitment.contracts.index') }}">
+                        <i class="las la-file-contract"></i>{{ __('recruitment.contracts') }}
+                    </a>
+                </li>
+            @endcan
+            @can('view Onboardings')
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('recruitment.onboardings.index') }}">
+                        <i class="las la-user-check"></i>{{ __('recruitment.onboardings') }}
+                    </a>
+                </li>
+            @endcan
+            @can('view Terminations')
+                <li class="nav-item">
+                    <a class="nav-link d-flex align-items-center gap-2 font-hold fw-bold transition-base" href="{{ route('recruitment.terminations.index') }}">
+                        <i class="las la-user-times"></i>{{ __('recruitment.terminations') }}
                     </a>
                 </li>
             @endcan

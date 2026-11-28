@@ -13,9 +13,10 @@ return new class extends Migration
     {
         Schema::create('kpis', function (Blueprint $table) {
             $table->id();
-            $table->string('name')->required()->unique();
+            $table->string('name');
             $table->string('description')->nullable();
             $table->timestamps();
+        
         });
     }
 

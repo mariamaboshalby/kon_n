@@ -24,9 +24,10 @@ class MonthlyActivitySummaryService
      * @param string   $dateFrom  Y-m-d
      * @param string   $dateTo    Y-m-d
      * @param int|null $departmentId
+     * @param string   $searchName Employee name search filter
      * @return array
      */
-    public function generate(string $dateFrom, string $dateTo, ?int $departmentId = null): array
+    public function generate(string $dateFrom, string $dateTo, ?int $departmentId = null, string $searchName = ''): array
     {
         $from = Carbon::parse($dateFrom)->startOfDay();
         $to   = Carbon::parse($dateTo)->startOfDay();
@@ -35,6 +36,7 @@ class MonthlyActivitySummaryService
         $employees = Employee::where('status', '!=', 'خارج الشركة')
             ->with(['department', 'shift'])
             ->when($departmentId, fn ($q) => $q->where('department_id', $departmentId))
+            ->when($searchName, fn ($q) => $q->where('name', 'like', '%' . $searchName . '%'))
             ->orderBy('name')
             ->get();
 
@@ -195,6 +197,7 @@ class MonthlyActivitySummaryService
             'total_errand_days'  => $rowsCollection->sum('errand_days'),
             'total_permissions'  => $rowsCollection->sum('permission_count'),
             'total_late_days'    => $rowsCollection->sum('late_days'),
+            'total_work_hours'   => $rowsCollection->sum('present_days') * 8,
             'perfect_attendance' => $rowsCollection
                 ->filter(fn ($r) => $r['absent_days'] === 0 && $r['late_days'] === 0)
                 ->count(),

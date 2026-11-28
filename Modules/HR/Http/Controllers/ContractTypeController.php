@@ -1,72 +1,79 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Modules\HR\Http\Controllers;
 
-use Modules\HR\Models\ContractType;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
-
+use Illuminate\View\View;
+use Modules\HR\Models\ContractType;
 
 class ContractTypeController extends Controller
 {
     public function __construct()
     {
-        $this->middleware('can:view Contract Types')->only(['index']);  
-        $this->middleware('can:create Contract Types')->only(['create', 'store']);
-        $this->middleware('can:edit Contract Types')->only(['update', 'edit']);
+        $this->middleware('can:view Contract Types')->only(['index', 'data']);
+        $this->middleware('can:create Contract Types')->only(['store']);
+        $this->middleware('can:edit Contract Types')->only(['update']);
         $this->middleware('can:delete Contract Types')->only(['destroy']);
     }
 
-    public function index()
+    public function index(): View
     {
-        return redirect()->route('recruitment.contract-types.index');
+        return view('recruitment::contract-types.manage');
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function data(Request $request): JsonResponse
     {
-        //
+        $search = $request->string('search')->toString();
+
+        $rows = ContractType::query()
+            ->when($search !== '', fn ($q) => $q->where('name', 'like', '%'.$search.'%'))
+            ->orderByDesc('id')
+            ->get(['id', 'name', 'description']);
+
+        return response()->json(['data' => $rows]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
+    public function store(Request $request): JsonResponse
     {
-        //
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+        ]);
+
+        ContractType::create($validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => __('hr::hr.contract_type_created_successfully'),
+        ]);
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(ContractType $contractType)
+    public function update(Request $request, ContractType $contract_type): JsonResponse
     {
-        //
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+        ]);
+
+        $contract_type->update($validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => __('hr::hr.contract_type_updated_successfully'),
+        ]);
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(ContractType $contractType)
+    public function destroy(ContractType $contract_type): JsonResponse
     {
-        //
-    }
+        $contract_type->delete();
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, ContractType $contractType)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(ContractType $contractType)
-    {
-        //
+        return response()->json([
+            'success' => true,
+            'message' => __('hr::hr.contract_type_deleted_successfully'),
+        ]);
     }
 }

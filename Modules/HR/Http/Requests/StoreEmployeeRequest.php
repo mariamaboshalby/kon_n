@@ -23,14 +23,19 @@ class StoreEmployeeRequest extends FormRequest
      */
     public function rules(): array
     {
-        $employeeId = $this->route('employee')?->id ?? $this->input('employeeId') ?? null;
-        $isEdit = $this->input('isEdit', false);
+        $routeEmployee = $this->route('employee');
+        $employeeId = is_object($routeEmployee)
+            ? ($routeEmployee->id ?? null)
+            : ($routeEmployee ?: ($this->input('employeeId') ?: null));
 
         return [
             'name' => ['required', 'string', 'unique:employees,name,'.$employeeId],
-            'email' => ['required', 'email', 'unique:employees,email,'.$employeeId],
-            'phone' => ['required', 'string', 'unique:employees,phone,'.$employeeId],
-            'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif', 'max:2048'],
+            'name_ar' => ['nullable', 'string', 'max:255'],
+            'name_en' => ['nullable', 'string', 'max:255'],
+            'code' => ['nullable', 'string', 'max:255', 'unique:employees,code,'.$employeeId],
+            'email' => ['nullable', 'email', 'unique:employees,email,'.$employeeId],
+            'phone' => ['nullable', 'string', 'unique:employees,phone,'.$employeeId],
+            'image' => ['nullable', 'file', 'max:2048'],
             'gender' => ['nullable', 'in:male,female'],
             'date_of_birth' => ['nullable', 'date'],
             'nationalId' => ['nullable', 'string', 'unique:employees,nationalId,'.$employeeId],
@@ -44,16 +49,20 @@ class StoreEmployeeRequest extends FormRequest
             'town_id' => ['nullable', 'exists:towns,id'],
             'job_id' => ['nullable', 'exists:employees_jobs,id'],
             'department_id' => ['nullable', 'exists:departments,id'],
+            'department_director_id' => ['nullable', 'exists:employees,id'],
             'date_of_hire' => ['nullable', 'date'],
             'date_of_joining' => ['nullable', 'date'],
             'date_of_fire' => ['nullable', 'date'],
             'job_level' => ['nullable', 'string'],
             'salary' => ['nullable', 'numeric'],
+            'currency_id' => ['nullable', 'exists:currencies,id'],
+            'exchange_rate' => ['nullable', 'numeric', 'min:0.00000001'],
+            'currency_salary' => ['nullable', 'numeric', 'min:0'],
             'finger_print_id' => ['nullable', 'integer', 'unique:employees,finger_print_id,'.$employeeId],
             'finger_print_name' => ['nullable', 'string', 'unique:employees,finger_print_name,'.$employeeId],
             'salary_type' => ['nullable', 'string'],
             'shift_id' => ['nullable', 'exists:shifts,id'],
-            'password' => [$isEdit ? 'nullable' : 'required', 'string', 'min:6'],
+            'password' => ['nullable', 'string', 'min:6'],
             'additional_hour_calculation' => ['nullable', 'numeric'],
             'additional_day_calculation' => ['nullable', 'numeric'],
             'late_hour_calculation' => ['nullable', 'numeric'],
@@ -66,12 +75,14 @@ class StoreEmployeeRequest extends FormRequest
             'is_errand_allowed' => ['nullable', 'boolean'],
             'allowed_errand_days' => ['nullable', 'integer', 'min:0'],
             'line_manager_id' => ['nullable', 'exists:employees,id'],
+            'require_location' => ['nullable', 'boolean'],
+            'location_type'    => ['nullable', 'in:company,project'],
             'kpi_ids' => ['nullable', 'array'],
             'kpi_ids.*' => ['exists:kpis,id'],
             'kpi_weights' => ['nullable', 'array'],
             'kpi_weights.*' => ['nullable', 'integer', 'min:0', 'max:100'],
             'selected_kpi_id' => ['nullable', 'exists:kpis,id'],
-            'salary_basic_account_id' => ['required', 'exists:acc_head,id'],
+            'salary_basic_account_id' => ['nullable', 'exists:acc_head,id'],
             'opening_balance' => ['nullable', 'numeric'],
             'leave_balances' => ['nullable', 'array'],
             'leave_balances.*.leave_type_id' => ['required', 'exists:leave_types,id'],
@@ -82,88 +93,16 @@ class StoreEmployeeRequest extends FormRequest
             'leave_balances.*.max_monthly_days' => ['required', 'numeric', 'min:0'],
             'leave_balances.*.notes' => ['nullable', 'string'],
             'selected_leave_type_id' => ['nullable', 'exists:leave_types,id'],
+            'national_id_number' => ['nullable', 'string', 'max:50'],
+            'national_id_start'  => ['nullable', 'date'],
+            'national_id_expiry' => ['nullable', 'date'],
+            'residence_number'   => ['nullable', 'string', 'max:50'],
+            'residence_start'    => ['nullable', 'date'],
+            'residence_expiry'   => ['nullable', 'date'],
+            'license_number'     => ['nullable', 'string', 'max:50'],
+            'license_start'      => ['nullable', 'date'],
+            'license_expiry'     => ['nullable', 'date'],
         ];
-    }
-
-    /**
-     * Get validation rules as a static method (for use in Volt Components)
-     *
-     * @return array<string, string>
-     */
-    public static function getRules(?int $employeeId = null, bool $isEdit = false): array
-    {
-        $employeeIdStr = $employeeId ? (string) $employeeId : '';
-
-        // Build rules array (same as rules() method but in static context)
-        $rules = [
-            'name' => 'required|string|unique:employees,name,'.$employeeIdStr,
-            'email' => 'required|email|unique:employees,email,'.$employeeIdStr,
-            'phone' => 'required|string|unique:employees,phone,'.$employeeIdStr,
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'gender' => 'nullable|in:male,female',
-            'date_of_birth' => 'nullable|date',
-            'nationalId' => 'nullable|string|unique:employees,nationalId,'.$employeeIdStr,
-            'marital_status' => 'nullable|in:single,married,divorced,widowed,غير متزوج,متزوج,مطلق,أرمل',
-            'education' => 'nullable|in:diploma,bachelor,master,doctorate,دبلوم,بكالوريوس,ماجستير,دكتوراه',
-            'information' => 'nullable|string',
-            'status' => 'nullable|in:مقيم,مواطن,زائر,خارج الشركة,resident,citizen,visitor,outside_company',
-            'country_id' => 'nullable|exists:countries,id',
-            'city_id' => 'nullable|exists:cities,id',
-            'state_id' => 'nullable|exists:states,id',
-            'town_id' => 'nullable|exists:towns,id',
-            'job_id' => 'nullable|exists:employees_jobs,id',
-            'department_id' => 'nullable|exists:departments,id',
-            'date_of_hire' => 'nullable|date',
-            'date_of_joining' => 'nullable|date',
-            'date_of_fire' => 'nullable|date',
-            'job_level' => 'nullable|string',
-            'salary' => 'nullable|numeric',
-            'finger_print_id' => 'nullable|integer|unique:employees,finger_print_id,'.$employeeIdStr,
-            'finger_print_name' => 'nullable|string|unique:employees,finger_print_name,'.$employeeIdStr,
-            'salary_type' => 'nullable|string',
-            'shift_id' => 'nullable|exists:shifts,id',
-            'password' => ($isEdit ? 'nullable' : 'required').'|string|min:6',
-            'additional_hour_calculation' => 'nullable|numeric',
-            'additional_day_calculation' => 'nullable|numeric',
-            'late_hour_calculation' => 'nullable|numeric',
-            'late_day_calculation' => 'nullable|numeric',
-            'flexible_hourly_wage' => 'nullable|numeric',
-            'allowed_permission_days' => 'nullable|integer|min:0',
-            'allowed_late_days' => 'nullable|integer|min:0',
-            'allowed_absent_days' => 'nullable|integer|min:0',
-            'days_off' => 'nullable|integer|min:0',
-            'is_errand_allowed' => 'nullable|boolean',
-            'allowed_errand_days' => 'nullable|integer|min:0',
-            'line_manager_id' => 'nullable|exists:employees,id',
-            'kpi_ids' => 'nullable|array',
-            'kpi_ids.*' => 'exists:kpis,id',
-            'kpi_weights' => 'nullable|array',
-            'kpi_weights.*' => 'nullable|integer|min:0|max:100',
-            'selected_kpi_id' => 'nullable|exists:kpis,id',
-            'salary_basic_account_id' => 'required|exists:acc_head,id',
-            'opening_balance' => 'nullable|numeric',
-            'leave_balances' => 'nullable|array',
-            'leave_balances.*.leave_type_id' => 'required|exists:leave_types,id',
-            'leave_balances.*.year' => 'required|integer|min:2020|max:2030',
-            'leave_balances.*.opening_balance_days' => 'nullable|numeric|min:0',
-            'leave_balances.*.used_days' => 'nullable|numeric|min:0',
-            'leave_balances.*.pending_days' => 'nullable|numeric|min:0',
-            'leave_balances.*.max_monthly_days' => 'required|numeric|min:0',
-            'leave_balances.*.notes' => 'nullable|string',
-            'selected_leave_type_id' => 'nullable|exists:leave_types,id',
-        ];
-
-        return $rules;
-    }
-
-    /**
-     * Get validation messages as a static method (for use in Volt Components)
-     *
-     * @return array<string, string>
-     */
-    public static function getMessages(): array
-    {
-        return (new static)->messages();
     }
 
     /**
@@ -179,6 +118,19 @@ class StoreEmployeeRequest extends FormRequest
             'name.string' => __('hr.name_string'),
             'name.unique' => __('hr.name_unique'),
 
+            // English name validation
+            'name_en.string' => __('hr.name_string'),
+            'name_en.max' => __('hr.name_string'),
+
+            // Nickname validation
+            'name_ar.string' => __('hr.name_string'),
+            'name_ar.max' => __('hr.name_string'),
+
+            // Employee code validation
+            'code.string' => __('hr.name_string'),
+            'code.max' => __('hr.name_string'),
+            'code.unique' => __('hr.name_unique'),
+
             // Email validation
             'email.required' => __('hr.email_required'),
             'email.email' => __('hr.email_email'),
@@ -189,9 +141,8 @@ class StoreEmployeeRequest extends FormRequest
             'phone.string' => __('hr.phone_string'),
             'phone.unique' => __('hr.phone_unique'),
 
-            // Image validation
-            'image.image' => __('hr.image_image'),
-            'image.mimes' => __('hr.image_mimes'),
+            // File upload validation
+            'image.file' => __('hr.image_image'),
             'image.max' => __('hr.image_max'),
 
             // Gender validation

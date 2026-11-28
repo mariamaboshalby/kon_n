@@ -12,27 +12,10 @@ class HRDatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call([
+            HRBaselineSeeder::class,
             HRPermissionsSeeder::class,
-            // Location Data (Dependencies for Employees)
-            CountrySeeder::class,
-            StateSeeder::class,
-            CitySeeder::class,
-            TownSeeder::class,
-            // Organizational Data
-            DepartmentSeeder::class,
-            EmployeesJobSeeder::class,
-            ShiftSeeder::class,
-            ContractTypeSeeder::class,
-            LeaveTypeSeeder::class,
-            // Employee Data
-            EmployeeSeeder::class,
-            // Data dependent on Employees
-            AttendanceProcessingTestSeeder::class,
-            AttendanceSeeder::class,
-            KpiSeeder::class,
-            CvSeeder::class,
-            // CreateTestAttendanceData::class,
-            // AttendanceTestDataSeeder::class,
+            GiveAdminHRPermissionsSeeder::class,
+            InstantEvaluationItemsSeeder::class,
         ]);
     }
 }

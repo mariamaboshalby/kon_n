@@ -384,15 +384,14 @@ class AttendanceProcessingService
 
         try {
             $results = [];
-            // Only get active employees
-            $employees = $department->employees()->where('status', 'مفعل')->get();
+            // Active = not left the company (status enum: مقيم|مواطن|زائر|خارج الشركة)
+            $employees = $department->employees()->where('status', '!=', 'خارج الشركة')->get();
 
-            // Check if department has any active employees
             if ($employees->isEmpty()) {
                 DB::rollBack();
 
                 return [
-                    'error' => "❌ القسم '{$department->title}' لا يحتوي على موظفين مفعلين.",
+                    'error' => "❌ القسم '{$department->title}' لا يحتوي على موظفين نشطين.",
                     'department' => $department,
                     'department_summary' => [],
                     'results' => [],
@@ -533,14 +532,17 @@ class AttendanceProcessingService
     private function processEmployeeAttendance(Employee $employee, Carbon $startDate, Carbon $endDate): array
     {
         // Use SalaryCalculationService to process attendance data
-        $salaryCalculationService = new \Modules\HR\Services\SalaryCalculationService;
+        $salaryCalculationService = app(SalaryCalculationService::class);
         $result = $salaryCalculationService->calculateSalary($employee, $startDate, $endDate);
 
         return $result;
     }
 
     /**
-     * Get expected working hours for employee
+     * Get expected working hours for employee.
+     *
+     * Uses a fixed reference date so that overnight shifts (end_time < start_time)
+     * are handled correctly: the end is advanced by one day before diffing.
      */
     private function getExpectedHours(Employee $employee): float
     {
@@ -548,10 +550,16 @@ class AttendanceProcessingService
             return 8.0; // Default 8 hours
         }
 
-        $startTime = Carbon::parse($employee->shift->start_time);
-        $endTime = Carbon::parse($employee->shift->end_time);
+        $refDate   = Carbon::parse('2000-01-01');
+        $startTime = $refDate->copy()->setTimeFromTimeString($employee->shift->start_time);
+        $endTime   = $refDate->copy()->setTimeFromTimeString($employee->shift->end_time);
 
-        return $startTime->diffInHours($endTime, false);
+        // Overnight shift: end is on the following day
+        if ($employee->shift->isOvernightShift()) {
+            $endTime->addDay();
+        }
+
+        return (float) $startTime->diffInMinutes($endTime) / 60;
     }
 
     /**
@@ -622,15 +630,21 @@ class AttendanceProcessingService
 
             if ($employee->shift) {
                 $shiftStartTime = $employee->shift->start_time;
-                $shiftEndTime = $employee->shift->end_time;
-                $basicHours = $this->getExpectedHours($employee);
+                $shiftEndTime   = $employee->shift->end_time;
+                $basicHours     = $this->getExpectedHours($employee);
 
-                // Calculate early hours if check-in is before shift start
+                // Calculate early hours if check-in is before shift start.
+                // We anchor both times to the attendance date so the comparison
+                // is on real datetimes (not 1970-01-01 fallbacks).
+                // For overnight shifts the start_time is still on $date; only
+                // end_time moves to $date+1, which doesn't affect early-check-in.
                 if ($dayData['check_in_time'] && $shiftStartTime) {
-                    $checkInTime = Carbon::parse($dayData['check_in_time']);
-                    $shiftStart = Carbon::parse($shiftStartTime);
+                    $checkInTime = Carbon::parse($date.' '.$dayData['check_in_time']);
+                    $shiftStart  = Carbon::parse($date.' '.$shiftStartTime);
+
                     if ($checkInTime->lt($shiftStart)) {
-                        $earlyHours = $shiftStart->diffInHours($checkInTime, false);
+                        // diffInMinutes is always positive here because we checked lt()
+                        $earlyHours = $shiftStart->diffInMinutes($checkInTime) / 60;
                     }
                 }
             }

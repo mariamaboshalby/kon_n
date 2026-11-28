@@ -15,6 +15,10 @@ use Illuminate\Support\Facades\Cache;
 
 class SalaryCalculationService
 {
+    public function __construct(
+        private readonly AttendanceImpactCalculator $attendanceImpactCalculator,
+    ) {}
+
     /**
      * Calculate salary for an employee for a specific period
      *
@@ -37,7 +41,8 @@ class SalaryCalculationService
      *         actual_hours: float,
      *         overtime_minutes: int,
      *         late_minutes: int,
-     *         holiday_days: int
+         *         holiday_days: int,
+         *         attendance_impact: int
      *     },
      *     salary_data: array{
      *         basic_salary: float,
@@ -85,6 +90,9 @@ class SalaryCalculationService
                     'overtime_minutes' => 0,
                     'late_minutes' => 0,
                     'holiday_days' => 0,
+                    'attendance_impact' => 0,
+                    'day_off_used' => 0,
+                    'extra_days' => 0,
                 ],
                 'salary_data' => [
                     'basic_salary' => 0,
@@ -168,13 +176,23 @@ class SalaryCalculationService
     }
 
     /**
-     * Get attendance records for employee in date range
+     * Get attendance records for employee in date range.
+     *
+     * For overnight-shift employees the check-out physically occurs on the calendar
+     * day *after* the check-in. We therefore fetch one extra day beyond $endDate so
+     * that those next-day check-outs are available to be re-attributed to the correct
+     * shift day inside processAttendanceData().
      */
     private function getAttendanceRecords(Employee $employee, Carbon $startDate, Carbon $endDate): Collection
     {
-        // Get the actual records for the date range
+        // Extend the fetch window by one extra day for overnight-shift employees so
+        // next-day check-outs are included.
+        $fetchEnd = ($employee->shift && $employee->shift->isOvernightShift())
+            ? $endDate->copy()->addDay()
+            : $endDate->copy();
+
         $records = Attendance::where('employee_id', $employee->id)
-            ->whereBetween('date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+            ->whereBetween('date', [$startDate->format('Y-m-d'), $fetchEnd->format('Y-m-d')])
             ->orderBy('date')
             ->orderBy('time')
             ->get();
@@ -183,11 +201,171 @@ class SalaryCalculationService
     }
 
     /**
-     * Process attendance data and calculate working hours
+     * Process attendance data and calculate working hours.
+     *
+     * For overnight shifts every check-out whose stored date equals (shiftStartDate + 1)
+     * and whose time falls inside the allowed check-out window for that shift is
+     * re-attributed to the previous day's group so that processDayAttendance() can
+     * pair it with its check-in correctly.
+     *
+     * The attendance_date stored for the record (and the "work day") remains the
+     * shift-START date — never the checkout date.
      */
     private function processAttendanceData(Employee $employee, Collection $attendances, Carbon $startDate, Carbon $endDate): array
     {
+        $shift    = $employee->shift;
+        $overnight = $shift && $shift->isOvernightShift();
+
+        // Group attendances by the date stored on the record.
+        // The 'date' cast returns a Carbon instance; Carbon::parse() on it would
+        // reinterpret the UTC-serialized form and shift the day back (e.g. Cairo
+        // midnight becomes the previous day), so use the local date string directly.
+        $attendanceByDate = $attendances->groupBy(function ($attendance) {
+            $date = $attendance->date;
+
+            return $date instanceof \Carbon\Date
+                ? $date->toDateString()
+                : Carbon::parse($date)->toDateString();
+        });
+
+        // For overnight shifts: re-attribute check-outs that land on the next calendar
+        // day back to the previous (shift-start) day's group.
+        if ($overnight) {
+            // Collect every check-out that belongs to a "next day" relative to some
+            // check-in day within our window. We iterate over a copy so mutations
+            // don't affect the loop.
+            foreach ($attendanceByDate->keys() as $dateStr) {
+                $prevDate = Carbon::parse($dateStr)->subDay()->format('Y-m-d');
+
+                // Only re-attribute if the previous day is within our processing window.
+                if (! isset($attendanceByDate[$prevDate]) && ! $attendanceByDate->has($prevDate)) {
+                    // Previous day had no records at all — nothing to re-attribute to.
+                    // Skip (the check-out on $dateStr belongs to a shift-start day
+                    // that is before our $startDate or truly has no check-in).
+                    continue;
+                }
+
+                $nextDayCheckOuts = $attendanceByDate->get($dateStr, collect())
+                    ->filter(fn ($r) => $r->type === 'check_out');
+
+                if ($nextDayCheckOuts->isEmpty()) {
+                    continue;
+                }
+
+                // Only move check-outs whose time is plausibly part of an overnight
+                // shift ending (i.e. the time is before or equal to the shift end_time).
+                // This avoids accidentally moving a genuine next-day check-in/check-out
+                // that belongs to its own shift start on that day.
+                $shiftEndTimeStr = $shift->end_time; // e.g. "01:00:00"
+
+                foreach ($nextDayCheckOuts as $checkOut) {
+                    $checkOutTime = Carbon::parse('2000-01-01 '.$checkOut->time);
+                    $shiftEnd     = Carbon::parse('2000-01-01 '.$shiftEndTimeStr);
+
+                    // Accept check-outs up to 2 hours past the shift end to cover overtime.
+                    if ($checkOutTime->lte($shiftEnd->copy()->addHours(2))) {
+                        // Move this record from the next-day group into the prev-day group.
+                        $prevGroup = $attendanceByDate->get($prevDate, collect());
+                        $prevGroup->push($checkOut);
+                        $attendanceByDate->put($prevDate, $prevGroup);
+
+                        // Remove from next-day group.
+                        $nextDayGroup = $attendanceByDate->get($dateStr, collect())
+                            ->reject(fn ($r) => $r->id === $checkOut->id);
+                        $attendanceByDate->put($dateStr, $nextDayGroup);
+                    }
+                }
+            }
+        }
+
         $dailyDetails = [];
+        for ($date = $startDate->copy(); $date->lte($endDate); $date->addDay()) {
+            $dateStr   = $date->format('Y-m-d');
+            $dayOfWeek = $date->dayOfWeek; // 0=Sunday, 1=Monday, etc.
+            $dayType   = $this->dayType($employee, $dayOfWeek, $attendanceByDate, $dateStr);
+            $dayAttendances = $attendanceByDate->get($dateStr, collect());
+            $dayData   = $this->processDayAttendance($employee, $dayAttendances, $date, $dayType, $startDate, $endDate);
+            $dailyDetails[$dateStr] = $this->normalizeUnqualifiedOffDay($dayData, $dayType);
+        }
+
+        $dailyDetails = $this->applyDayOffQuota($employee, $dailyDetails);
+
+        return [
+            'summary'       => $this->summarizeDailyDetails($employee, $dailyDetails),
+            'daily_details' => $dailyDetails,
+        ];
+    }
+
+    /**
+     * A punch on a non-shift day counts as overtime only when that salary type accepts it as present.
+     * An incomplete punch stays with the weekly-rest pool and does not raise overtime_days.
+     */
+    private function normalizeUnqualifiedOffDay(array $dayData, string $dayType): array
+    {
+        if ($dayType !== 'overtime_day' || ($dayData['status'] ?? '') !== 'absent') {
+            return $dayData;
+        }
+
+        $dayData['day_type'] = 'holiday';
+        $dayData['status'] = 'holiday';
+        $dayData['expected_hours'] = 0;
+        $dayData['actual_hours'] = 0;
+        $dayData['overtime_minutes'] = 0;
+        $dayData['late_minutes'] = 0;
+        $dayData['notes'] = 'بصمة غير مكتملة في يوم راحة';
+
+        return $dayData;
+    }
+
+    /**
+     * Consume days_off on working-day absences first, then on weekly rest days.
+     * Covered days become paid day_off rows. Unused quota stays unpaid extra_days.
+     *
+     * @param  array<string, array<string, mixed>>  $dailyDetails
+     * @return array<string, array<string, mixed>>
+     */
+    private function applyDayOffQuota(Employee $employee, array $dailyDetails): array
+    {
+        $absentDates = [];
+        $holidayDates = [];
+        foreach ($dailyDetails as $date => $day) {
+            $status = $day['status'] ?? '';
+            $dayType = $day['day_type'] ?? '';
+            if ($status === 'absent' && $dayType === 'working_day') {
+                $absentDates[] = $date;
+            } elseif ($status === 'holiday') {
+                $holidayDates[] = $date;
+            }
+        }
+
+        $quota = (int) ($employee->days_off ?? 0);
+        $impact = $this->attendanceImpactCalculator->calculate($quota, count($absentDates) + count($holidayDates));
+        $remaining = $impact['day_off_used'];
+        $shiftHours = $this->getExpectedHours($employee);
+
+        foreach ([$absentDates, $holidayDates] as $dates) {
+            foreach ($dates as $date) {
+                if ($remaining <= 0) {
+                    break;
+                }
+                $dailyDetails[$date]['status'] = 'day_off';
+                $dailyDetails[$date]['actual_hours'] = $shiftHours;
+                $dailyDetails[$date]['overtime_minutes'] = 0;
+                $dailyDetails[$date]['late_minutes'] = 0;
+                $dailyDetails[$date]['notes'] = 'يوم راحة (Day Off)';
+                $remaining--;
+            }
+        }
+
+        return $dailyDetails;
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $dailyDetails
+     * @return array<string, int|float>
+     */
+    private function summarizeDailyDetails(Employee $employee, array $dailyDetails): array
+    {
         $summary = [
             'total_days' => 0,
             'working_days' => 0,
@@ -203,77 +381,65 @@ class SalaryCalculationService
             'late_minutes' => 0,
             'early_hours' => 0,
             'leave_hours' => 0,
+            'day_off_used' => 0,
+            'extra_days' => 0,
         ];
-        // Group attendances by date (extract date part only)
-        $attendanceByDate = $attendances->groupBy(function ($attendance) {
-            return Carbon::parse($attendance->date)->format('Y-m-d');
-        });
-        // dd($attendanceByDate);
-        // Process each day in the period
-        for ($date = $startDate->copy(); $date->lte($endDate); $date->addDay()) {
-            $dateStr = $date->format('Y-m-d');
-            $dayOfWeek = $date->dayOfWeek; // 0=Sunday, 1=Monday, etc.
 
+        $missedForQuota = 0;
+        foreach ($dailyDetails as $day) {
+            $status = $day['status'] ?? '';
+            $dayType = $day['day_type'] ?? '';
             $summary['total_days']++;
 
-            // Check if it's a working day or overtime day or holiday
-            $dayType = $this->dayType($employee, $dayOfWeek, $attendanceByDate, $dateStr);
-            if ($dayType == 'holiday') {
-                $summary['holiday_days']++;
-            }
-            if ($dayType == 'working_day') {
+            if ($dayType === 'working_day') {
                 $summary['working_days']++;
             }
-            if ($dayType == 'overtime_day') {
+            if ($dayType === 'overtime_day' && $status === 'present') {
                 $summary['overtime_days']++;
             }
 
-            // Get attendance for this day
-            $dayAttendances = $attendanceByDate->get($dateStr, collect());
-            // dd($dayAttendances);
-            // Process day attendance
-            $dayData = $this->processDayAttendance($employee, $dayAttendances, $date, $dayType, $startDate, $endDate);
-
-            $dailyDetails[$dateStr] = $dayData;
-
-            // Update summary
-            if ($dayData['status'] === 'present') {
+            if ($status === 'present') {
                 $summary['present_days']++;
-                $summary['actual_hours'] += $dayData['actual_hours'];
-                // Sum minutes directly
-                $summary['overtime_minutes'] += $dayData['overtime_minutes'];
-                $summary['late_minutes'] += $dayData['late_minutes'];
-            } elseif ($dayData['status'] === 'half_day') {
+                $summary['actual_hours'] += $day['actual_hours'];
+                $summary['overtime_minutes'] += $day['overtime_minutes'];
+                $summary['late_minutes'] += $day['late_minutes'];
+            } elseif ($status === 'half_day') {
                 $summary['present_days'] += 0.5;
-                $summary['actual_hours'] += $dayData['actual_hours'];
-                $summary['late_minutes'] += $dayData['late_minutes'];
-                // No overtime for half day (fixed half day)
-            } elseif ($dayData['status'] === 'absent') {
+                $summary['actual_hours'] += $day['actual_hours'];
+                $summary['late_minutes'] += $day['late_minutes'];
+            } elseif ($status === 'absent') {
                 $summary['absent_days']++;
-            } elseif ($dayData['status'] === 'paid_leave') {
+                if ($dayType === 'working_day') {
+                    $missedForQuota++;
+                }
+            } elseif ($status === 'paid_leave') {
                 $summary['paid_leave_days']++;
-                $summary['actual_hours'] += $dayData['actual_hours']; // Count hours for paid leave
-                $summary['present_days']++; // Count as present day for salary calculation
-            } elseif ($dayData['status'] === 'unpaid_leave') {
+                $summary['actual_hours'] += $day['actual_hours'];
+                $summary['present_days']++;
+            } elseif ($status === 'unpaid_leave') {
                 $summary['unpaid_leave_days']++;
-                // Unpaid leave: no hours, no salary, count as absent for salary calculation
-                // Don't add to absent_days to differentiate from regular absence
+            } elseif ($status === 'day_off') {
+                $summary['day_off_used']++;
+                $summary['present_days']++;
+                $summary['actual_hours'] += $day['actual_hours'];
+                $missedForQuota++;
+                if ($dayType === 'working_day') {
+                    $summary['working_days'] = max(0, $summary['working_days'] - 1);
+                }
+            } elseif ($status === 'holiday') {
+                $summary['holiday_days']++;
+                $missedForQuota++;
             }
         }
 
-        // Apply days_off reduction (Bug fix: days_off was never subtracted from working_days)
-        $daysOff = (int) ($employee->days_off ?? 0);
-        if ($daysOff > 0) {
-            $summary['working_days'] = max(0, $summary['working_days'] - $daysOff);
-        }
-
-        // Calculate total hours
+        $quota = (int) ($employee->days_off ?? 0);
+        $impact = $this->attendanceImpactCalculator->calculate($quota, $missedForQuota);
+        $summary['day_off_used'] = $impact['day_off_used'];
+        $summary['extra_days'] = $impact['extra_days'];
+        $summary['attendance_impact'] = $impact['day_off_used'];
         $summary['total_hours'] = $summary['actual_hours'] + ($summary['overtime_minutes'] / 60);
 
-        return [
-            'summary' => $summary,
-            'daily_details' => $dailyDetails,
-        ];
+        return $summary;
     }
 
     /**
@@ -670,21 +836,46 @@ class SalaryCalculationService
         }
 
         // Process based on salary type ساعات عمل فقط'
+        // ------------------------------------------------------------------
+        // Overnight-shift helper: the checkout Carbon must be placed on the
+        // NEXT calendar day so diffInMinutes/diffInHours returns a positive
+        // value (e.g. 22:00 check-in → 01:00 check-out = 3 h, not -21 h).
+        // $checkInTime is always on $date; $checkOutDate is $date + 1 when
+        // the shift crosses midnight.
+        // ------------------------------------------------------------------
+        $overnight     = $shift && $shift->isOvernightShift();
+        $checkOutDate  = $overnight ? $date->copy()->addDay() : $date->copy();
+
         switch ($salaryType) {
             case 'ساعات عمل فقط':
-                // 1. بصمة دخول في النطاق + أي بصمة خروج → يحسب اليوم كاملاً بدون أي إضافي
-                // التأخير لا يُحسب لهذا النوع
+                // 1. بصمة دخول صحيحة + بصمة خروج → الساعات الفعلية بين الدخول
+                // والخروج. في الوردية الليلية بصمة الخروج على اليوم التالي،
+                // فبنحسبها من $checkOutDate (تاريخ اليوم + يوم) عشان المدة
+                // تعدّي منتصف الليل صح. بدون أي إضافي.
                 if ($validCheckIn && $checkOuts->isNotEmpty()) {
-                    $anyCheckOut = $this->getAnyCheckOut($checkOuts);
-                    $checkInTime = Carbon::parse($validCheckIn->time);
-                    $checkOutTime = Carbon::parse($anyCheckOut->time);
+                    $anyCheckOut  = $this->getAnyCheckOut($checkOuts);
+                    $checkInTime  = $date->copy()->setTimeFromTimeString($validCheckIn->time);
+                    $checkOutTime = $checkOutDate->copy()->setTimeFromTimeString($anyCheckOut->time);
+
+                    // لا يُحتسب وقت قبل بداية الوردية (حضور مبكر مش شغل)
+                    if ($shift && $shift->start_time) {
+                        $shiftStart = $date->copy()->setTimeFromTimeString($shift->start_time);
+                        if ($checkInTime->lt($shiftStart)) {
+                            $checkInTime = $shiftStart;
+                        }
+                    }
+
+                    $workedMinutes = (int) round($checkInTime->diffInMinutes($checkOutTime, true));
+
+                    // هذا النوع بلا إضافي: تُجزّ الساعات عند مدة الوردية.
+                    $actualHours = min($workedMinutes / 60, $expectedHours);
 
                     return [
                         'date' => $date->format('Y-m-d'),
                         'status' => 'present',
                         'day_type' => $dayType,
                         'expected_hours' => $expectedHours,
-                        'actual_hours' => $expectedHours, // يوم كامل فقط بدون إضافي
+                        'actual_hours' => $actualHours, // ساعات فعلية من البصمتين بدون إضافي
                         'overtime_minutes' => 0, // لا يوجد إضافي
                         'late_minutes' => 0, // لا يُحسب التأخير لهذا النوع
                         'check_in_time' => $validCheckIn->time,
@@ -696,17 +887,15 @@ class SalaryCalculationService
                 break;
 
             case 'ساعات عمل و إضافي يومى':
-                // 2. يحسب اليوم (8 ساعات) + الإضافي إذا كانت بصمة الخروج بعد ending_check_out
-                // الراتب الإضافي للساعات بعد end_time (ولكن فقط إذا كانت بصمة الخروج بعد ending_check_out)
+                // 2. يحسب اليوم (8 ساعات) + الإضافي مباشرة إذا كانت بصمة الخروج بعد end_time
                 if ($validCheckIn && $checkOuts->isNotEmpty()) {
-                    $anyCheckOut = $this->getAnyCheckOut($checkOuts);
-                    // Use the date from $date parameter to create proper Carbon objects
-                    $checkInTime = Carbon::parse($date->format('Y-m-d').' '.$validCheckIn->time);
-                    $checkOutTime = Carbon::parse($date->format('Y-m-d').' '.$anyCheckOut->time);
+                    $anyCheckOut  = $this->getAnyCheckOut($checkOuts);
+                    $checkInTime  = $date->copy()->setTimeFromTimeString($validCheckIn->time);
+                    $checkOutTime = $checkOutDate->copy()->setTimeFromTimeString($anyCheckOut->time);
 
                     // Clamp check-in time to shift start time if it's early
                     if ($shift && $shift->start_time) {
-                        $shiftStart = Carbon::parse($date->format('Y-m-d').' '.$shift->start_time);
+                        $shiftStart = $date->copy()->setTimeFromTimeString($shift->start_time);
                         if ($checkInTime->lt($shiftStart)) {
                             $checkInTime = $shiftStart;
                         }
@@ -715,26 +904,10 @@ class SalaryCalculationService
                     // Basic hours = expected hours
                     $basicHours = $expectedHours;
 
-                    // Overtime = hours after end_time, but only if check-out is after ending_check_out
-                    $isAfterEndingCheckOut = $this->isCheckOutAfterEndingCheckOut($shift, $checkOutTime);
-                    $overtimeMinutes = 0;
+                    // Overtime = minutes after end_time (pass $date as the shift-start anchor)
+                    $overtimeMinutes = $this->getOvertimeMinutesAfterEndTime($shift, $checkOutTime, $date);
 
-                    if ($isAfterEndingCheckOut) {
-                        // Calculate overtime after end_time (official shift end time)
-                        $overtimeMinutes = $this->getOvertimeMinutesAfterEndTime($shift, $checkOutTime);
-                    }
-
-                    // Calculate late hours (pass original check-in time if needed, but here we use clamped/original for calculation?)
-                    // Wait, calculateLateHours uses the passed checkInTime. If we clamped it, late hours would be 0.
-                    // But late hours should be calculated based on ACTUAL check-in.
-                    // However, if check-in is EARLY, late hours is 0 anyway.
-                    // So passing clamped time (which is shift start) results in 0 late hours, which is correct.
-                    // BUT, calculateLateHours might need the original time if we wanted to track "early arrival" (not needed here).
-                    // Actually, let's pass the original time to calculateLateHours just in case, but re-parse it or use validCheckIn->time.
-                    // Ah, I overwrote $checkInTime.
-                    // Let's re-parse for late hours or just use the logic that early check-in = 0 late hours.
-
-                    $lateMinutes = $this->calculateLateMinutes($shift, Carbon::parse($date->format('Y-m-d').' '.$validCheckIn->time));
+                    $lateMinutes = $this->calculateLateMinutes($shift, $date->copy()->setTimeFromTimeString($validCheckIn->time));
 
                     return [
                         'date' => $date->format('Y-m-d'),
@@ -753,17 +926,15 @@ class SalaryCalculationService
                 break;
 
             case 'ساعات عمل و إضافي للمده':
-                // 3. نفس "إضافي يومى" - يحسب اليوم (8 ساعات) + الإضافي إذا كانت بصمة الخروج بعد ending_check_out
-                // الراتب الإضافي للساعات بعد end_time (ولكن فقط إذا كانت بصمة الخروج بعد ending_check_out)
+                // 3. نفس "إضافي يومى"
                 if ($validCheckIn && $checkOuts->isNotEmpty()) {
-                    $anyCheckOut = $this->getAnyCheckOut($checkOuts);
-                    // Use the date from $date parameter to create proper Carbon objects
-                    $checkInTime = Carbon::parse($date->format('Y-m-d').' '.$validCheckIn->time);
-                    $checkOutTime = Carbon::parse($date->format('Y-m-d').' '.$anyCheckOut->time);
+                    $anyCheckOut  = $this->getAnyCheckOut($checkOuts);
+                    $checkInTime  = $date->copy()->setTimeFromTimeString($validCheckIn->time);
+                    $checkOutTime = $checkOutDate->copy()->setTimeFromTimeString($anyCheckOut->time);
 
                     // Clamp check-in time to shift start time if it's early
                     if ($shift && $shift->start_time) {
-                        $shiftStart = Carbon::parse($date->format('Y-m-d').' '.$shift->start_time);
+                        $shiftStart = $date->copy()->setTimeFromTimeString($shift->start_time);
                         if ($checkInTime->lt($shiftStart)) {
                             $checkInTime = $shiftStart;
                         }
@@ -772,16 +943,10 @@ class SalaryCalculationService
                     // Basic hours = expected hours
                     $basicHours = $expectedHours;
 
-                    // Overtime = hours after end_time, but only if check-out is after ending_check_out
-                    $isAfterEndingCheckOut = $this->isCheckOutAfterEndingCheckOut($shift, $checkOutTime);
-                    $overtimeMinutes = 0;
+                    // Overtime = minutes after end_time
+                    $overtimeMinutes = $this->getOvertimeMinutesAfterEndTime($shift, $checkOutTime, $date);
 
-                    if ($isAfterEndingCheckOut) {
-                        // Calculate overtime after end_time (official shift end time)
-                        $overtimeMinutes = $this->getOvertimeMinutesAfterEndTime($shift, $checkOutTime);
-                    }
-
-                    $lateMinutes = $this->calculateLateMinutes($shift, Carbon::parse($date->format('Y-m-d').' '.$validCheckIn->time));
+                    $lateMinutes = $this->calculateLateMinutes($shift, $date->copy()->setTimeFromTimeString($validCheckIn->time));
 
                     return [
                         'date' => $date->format('Y-m-d'),
@@ -803,8 +968,6 @@ class SalaryCalculationService
                 // 4. في حالة وجود بصمة دخول داخل نطاق الدخول يحسب يوم كامل حتى لو ما فيش بصمة خروج
                 // التأخير لا يُحسب لهذا النوع
                 if ($validCheckIn) {
-                    $checkInTime = Carbon::parse($validCheckIn->time);
-
                     // Get check-out if exists (for display purposes)
                     $anyCheckOut = $checkOuts->isNotEmpty() ? $this->getAnyCheckOut($checkOuts) : null;
 
@@ -826,10 +989,9 @@ class SalaryCalculationService
 
             case 'إنتاج فقط':
                 // 5. البصمة ملهاش لازمة في الراتب لأن الراتب بناء على الإنتاج وليس ساعات الحضور
-                // Always count as full day if there's any check-in
                 if ($checkIns->isNotEmpty()) {
                     $firstCheckIn = $checkIns->first();
-                    $anyCheckOut = $checkOuts->isNotEmpty() ? $this->getAnyCheckOut($checkOuts) : null;
+                    $anyCheckOut  = $checkOuts->isNotEmpty() ? $this->getAnyCheckOut($checkOuts) : null;
 
                     return [
                         'date' => $date->format('Y-m-d'),
@@ -851,20 +1013,20 @@ class SalaryCalculationService
                 // Default behavior (same as 'ساعات عمل فقط')
                 // التأخير لا يُحسب لهذا النوع
                 if ($validCheckIn && $checkOuts->isNotEmpty()) {
-                    $anyCheckOut = $this->getAnyCheckOut($checkOuts);
-                    $checkInTime = Carbon::parse($date->format('Y-m-d').' '.$validCheckIn->time);
-                    $checkOutTime = Carbon::parse($date->format('Y-m-d').' '.$anyCheckOut->time);
+                    $anyCheckOut  = $this->getAnyCheckOut($checkOuts);
+                    $checkInTime  = $date->copy()->setTimeFromTimeString($validCheckIn->time);
+                    $checkOutTime = $checkOutDate->copy()->setTimeFromTimeString($anyCheckOut->time);
 
                     // Clamp check-in time to shift start time if it's early
                     if ($shift && $shift->start_time) {
-                        $shiftStart = Carbon::parse($date->format('Y-m-d').' '.$shift->start_time);
+                        $shiftStart = $date->copy()->setTimeFromTimeString($shift->start_time);
                         if ($checkInTime->lt($shiftStart)) {
                             $checkInTime = $shiftStart;
                         }
                     }
 
-                    $actualHours = $checkInTime->diffInHours($checkOutTime, false);
-                    $overtimeHours = 0; // Initialize to 0
+                    $actualHours   = $checkInTime->diffInMinutes($checkOutTime) / 60;
+                    $overtimeHours = 0;
 
                     if ($actualHours > $expectedHours) {
                         $overtimeHours = $actualHours - $expectedHours;
@@ -904,7 +1066,15 @@ class SalaryCalculationService
     }
 
     /**
-     * Get expected working hours for employee
+     * Get expected working hours for employee.
+     *
+     * Uses a fixed reference date so that overnight shifts (end_time < start_time)
+     * are handled correctly: the end is advanced by one day before diffing.
+     *
+     * Examples:
+     *   08:00 → 16:00  →  8 h  (same day)
+     *   17:00 → 01:00  →  8 h  (overnight, end moved to next reference day)
+     *   22:00 → 06:00  →  8 h  (overnight)
      */
     private function getExpectedHours(Employee $employee): float
     {
@@ -912,10 +1082,16 @@ class SalaryCalculationService
             return 8.0; // Default 8 hours
         }
 
-        $startTime = Carbon::parse($employee->shift->start_time);
-        $endTime = Carbon::parse($employee->shift->end_time);
+        $refDate   = Carbon::parse('2000-01-01');
+        $startTime = $refDate->copy()->setTimeFromTimeString($employee->shift->start_time);
+        $endTime   = $refDate->copy()->setTimeFromTimeString($employee->shift->end_time);
 
-        return $startTime->diffInHours($endTime, false);
+        // Overnight shift: end is on the following day
+        if ($employee->shift->isOvernightShift()) {
+            $endTime->addDay();
+        }
+
+        return (float) $startTime->diffInMinutes($endTime) / 60;
     }
 
     /**
@@ -937,17 +1113,33 @@ class SalaryCalculationService
     }
 
     /**
-     * Calculate overtime minutes after official shift end time
+     * Calculate overtime minutes after official shift end time.
+     *
+     * For overnight shifts the $shiftStartDate is the calendar date of the shift's
+     * START (i.e. the "work day"). The end time is placed on $shiftStartDate + 1
+     * day so it compares correctly with a check-out that also belongs to that +1 day.
+     *
+     * @param  Carbon|null  $shiftStartDate  The shift's start date (work day). Pass
+     *                                        when the caller knows it; if null the
+     *                                        checkout's own date is used (safe for
+     *                                        non-overnight shifts).
      */
-    private function getOvertimeMinutesAfterEndTime($shift, Carbon $checkOutTime): int
+    private function getOvertimeMinutesAfterEndTime($shift, Carbon $checkOutTime, ?Carbon $shiftStartDate = null): int
     {
         if (! $shift || ! $shift->end_time) {
             return 0;
         }
-        $dateStr = $checkOutTime->format('Y-m-d');
-        $shiftEnd = Carbon::parse($dateStr.' '.$shift->end_time);
+
+        // Anchor the shift-end on the shift-start date, then push it to the next day
+        // when the shift crosses midnight.
+        $anchorDate = $shiftStartDate ?? $checkOutTime;
+        $shiftEnd   = $anchorDate->copy()->setTimeFromTimeString($shift->end_time);
+        if ($shift->isOvernightShift()) {
+            $shiftEnd->addDay();
+        }
+
         if ($checkOutTime->gt($shiftEnd)) {
-            return $shiftEnd->diffInMinutes($checkOutTime);
+            return (int) $shiftEnd->diffInMinutes($checkOutTime);
         }
 
         return 0;
@@ -981,9 +1173,11 @@ class SalaryCalculationService
     }
 
     /**
-     * Get last valid check-out within the allowed range
-     * If no check-out is within the range but there's a check-out after ending_check_out,
-     * accept it as valid (likely overtime)
+     * Get last valid check-out within the allowed range.
+     *
+     * For overnight shifts the beginning/ending_check_out window may cross midnight,
+     * so the boundaries are built on $date (shift-start day) and the end boundary is
+     * pushed to the next day when the shift is overnight.
      */
     private function getLastValidCheckOut($shift, Collection $checkOuts, Carbon $date)
     {
@@ -992,28 +1186,41 @@ class SalaryCalculationService
             return $checkOuts->first();
         }
 
-        // Use the date from parameter for proper comparison
-        $dateStr = $date->format('Y-m-d');
-        $beginningCheckOut = Carbon::parse($dateStr.' '.$shift->beginning_check_out);
-        $endingCheckOut = Carbon::parse($dateStr.' '.$shift->ending_check_out);
+        $overnight = $shift->isOvernightShift();
+
+        // Build check-out window anchored to the shift-start date.
+        $beginningCheckOut = $date->copy()->setTimeFromTimeString($shift->beginning_check_out);
+        $endingCheckOut    = $date->copy()->setTimeFromTimeString($shift->ending_check_out);
+
+        // For overnight shifts the allowed checkout window is on the NEXT day.
+        if ($overnight) {
+            $beginningCheckOut->addDay();
+            $endingCheckOut->addDay();
+        }
 
         // First, try to find a check-out within the allowed range
         foreach ($checkOuts as $checkOut) {
-            $checkOutTime = Carbon::parse($dateStr.' '.$checkOut->time);
+            // Re-attribute logic already moved this record's date to $date, but
+            // $checkOut->time is still the real time. Reconstruct a full datetime.
+            $checkOutTime = $date->copy()->setTimeFromTimeString($checkOut->time);
 
-            // Check if check-out is within the allowed range
+            // For overnight shifts, the checkout time (e.g. 01:00) is on the next day.
+            if ($overnight) {
+                $checkOutTime->addDay();
+            }
+
             if ($checkOutTime->between($beginningCheckOut, $endingCheckOut)) {
                 return $checkOut;
             }
         }
 
-        // If no check-out within range, check for check-outs after ending_check_out
-        // These are likely overtime check-outs and should be accepted
+        // If no check-out within range, accept overtime check-outs (after ending window).
         foreach ($checkOuts as $checkOut) {
-            $checkOutTime = Carbon::parse($dateStr.' '.$checkOut->time);
+            $checkOutTime = $date->copy()->setTimeFromTimeString($checkOut->time);
+            if ($overnight) {
+                $checkOutTime->addDay();
+            }
 
-            // Accept check-out if it's after ending_check_out (overtime)
-            // But reject if it's before beginning_check_out (too early, likely wrong)
             if ($checkOutTime->gt($endingCheckOut)) {
                 return $checkOut;
             }
@@ -1032,20 +1239,26 @@ class SalaryCalculationService
     }
 
     /**
-     * Get overtime hours after ending_check_out
+     * Get overtime hours after ending_check_out.
+     *
+     * Accepts an optional $shiftStartDate so overnight shifts can correctly
+     * place the ending_check_out boundary on the next calendar day.
      */
-    private function getOvertimeHoursAfterEndingCheckOut($shift, Carbon $checkOutTime): float
+    private function getOvertimeHoursAfterEndingCheckOut($shift, Carbon $checkOutTime, ?Carbon $shiftStartDate = null): float
     {
         if (! $shift->ending_check_out) {
             return 0;
         }
 
-        $endingCheckOut = Carbon::parse($shift->ending_check_out);
+        $anchorDate    = $shiftStartDate ?? $checkOutTime;
+        $endingCheckOut = $anchorDate->copy()->setTimeFromTimeString($shift->ending_check_out);
+        if ($shift->isOvernightShift()) {
+            $endingCheckOut->addDay();
+        }
 
         if ($checkOutTime->gt($endingCheckOut)) {
-            // Calculate overtime in hours.minutes format (e.g., 1.30 for 1 hour 30 minutes)
             $totalMinutes = $endingCheckOut->diffInMinutes($checkOutTime);
-            $hours = floor($totalMinutes / 60);
+            $hours   = floor($totalMinutes / 60);
             $minutes = $totalMinutes % 60;
 
             return $hours + ($minutes / 100);
@@ -1055,22 +1268,26 @@ class SalaryCalculationService
     }
 
     /**
-     * Get overtime hours after end_time (official shift end time)
-     * This is used for calculating overtime salary
+     * Get overtime hours after end_time (official shift end time).
+     *
+     * Accepts an optional $shiftStartDate so overnight shifts place end_time
+     * on the correct calendar day (start date + 1).
      */
-    private function getOvertimeHoursAfterEndTime($shift, Carbon $checkOutTime): float
+    private function getOvertimeHoursAfterEndTime($shift, Carbon $checkOutTime, ?Carbon $shiftStartDate = null): float
     {
         if (! $shift->end_time) {
             return 0;
         }
 
-        // Use the same date as checkOutTime for proper comparison
-        $endTime = Carbon::parse($checkOutTime->format('Y-m-d').' '.$shift->end_time);
+        $anchorDate = $shiftStartDate ?? $checkOutTime;
+        $endTime    = $anchorDate->copy()->setTimeFromTimeString($shift->end_time);
+        if ($shift->isOvernightShift()) {
+            $endTime->addDay();
+        }
 
         if ($checkOutTime->gt($endTime)) {
-            // Calculate overtime in hours.minutes format (e.g., 1.30 for 1 hour 30 minutes)
             $totalMinutes = $endTime->diffInMinutes($checkOutTime);
-            $hours = floor($totalMinutes / 60);
+            $hours   = floor($totalMinutes / 60);
             $minutes = $totalMinutes % 60;
 
             return $hours + ($minutes / 100);
@@ -1080,16 +1297,21 @@ class SalaryCalculationService
     }
 
     /**
-     * Check if check-out is after ending_check_out
+     * Check if check-out is after ending_check_out.
+     *
+     * Accepts an optional $shiftStartDate for overnight-shift correctness.
      */
-    private function isCheckOutAfterEndingCheckOut($shift, Carbon $checkOutTime): bool
+    private function isCheckOutAfterEndingCheckOut($shift, Carbon $checkOutTime, ?Carbon $shiftStartDate = null): bool
     {
         if (! $shift->ending_check_out) {
             return false;
         }
 
-        // Use the same date as checkOutTime for proper comparison
-        $endingCheckOut = Carbon::parse($checkOutTime->format('Y-m-d').' '.$shift->ending_check_out);
+        $anchorDate     = $shiftStartDate ?? $checkOutTime;
+        $endingCheckOut = $anchorDate->copy()->setTimeFromTimeString($shift->ending_check_out);
+        if ($shift->isOvernightShift()) {
+            $endingCheckOut->addDay();
+        }
 
         return $checkOutTime->gt($endingCheckOut);
     }
